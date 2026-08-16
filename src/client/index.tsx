@@ -185,7 +185,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       const j = await api(`/status?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`)
       setStatus(j.status)
     } catch (e) { setStatus(null); setError(String((e as Error).message || e)) }
-    setBusyCmd(null)
+    finally { setBusyCmd(null) }
   }
 
   useEffect(() => { if (repo) void refresh() }, [repo])
@@ -196,11 +196,11 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}&session=${encodeURIComponent(sessionRef.current)}`)
       setDiff(j.diff || '（无差异）')
     } catch (e) { setDiff(`读取失败：${String((e as Error).message || e)}`) }
-    setBusyCmd(null)
+    finally { setBusyCmd(null) }
   }
 
   const runOp = async (cmd: string, args: string[]): Promise<void> => {
-    if (!repoRef.current || busyCmd) return
+    if (!repoRef.current) return
     setBusyCmd(cmd); setError(null); setLastOp(null)
     try {
       const j = await api(`/${cmd}?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
@@ -211,7 +211,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       setMsg('')
       if (cmd === 'commit') { setDiff(''); setSelFile(null) }
     } catch (e) { setError(String((e as Error).message || e)) }
-    setBusyCmd(null)
+    finally { setBusyCmd(null) }
     await refresh()
   }
 
