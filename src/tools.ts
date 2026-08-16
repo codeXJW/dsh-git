@@ -4,7 +4,7 @@
  */
 import type { Context } from 'cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { diffOf, gitOk, inspectRepo, pushWithUpstream, recentLog, runGit } from './git.js'
+import { commitWithChanges, diffOf, gitOk, inspectRepo, pushWithUpstream, recentLog, runGit } from './git.js'
 
 type AppContext = Context & {
   logger?: { info?(...a: any[]): void; warn?(...a: any[]): void }
@@ -99,7 +99,7 @@ export function registerGitTools(ctx: AppContext): () => void {
 
   disposers.push(ctx.tools.register(defineTool({
     name: 'git_commit',
-    description: '提交暂存区。一次提交一个消息（可生成 conventional 前缀）。',
+    description: '提交一条消息。若暂存区为空但有未暂存的已跟踪改动，会自动先 git add -u 再提交（未跟踪文件不提交）。',
     parameters: {
       path: { type: 'string', description: '目标仓库绝对路径' },
       message: { type: 'string', description: '提交信息' },
@@ -110,8 +110,9 @@ export function registerGitTools(ctx: AppContext): () => void {
     },
     isConcurrencySafe: () => false,
     async execute(args) {
-      const std = await gitOk(repoOf(args.path), 'commit', { args: ['-m', String(args.message ?? '')] })
-      return { stdout: std }
+      const r = await commitWithChanges(repoOf(args.path), String(args.message ?? ''))
+      if (r.code !== 0) throw new Error(r.stderr || r.stdout || `git commit 失败（exit ${r.code}）`)
+      return { stdout: r.stdout }
     },
     presentCall(args: any) {
       return { card: 'generic' as const, title: `git commit: ${args.message}` }

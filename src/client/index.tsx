@@ -100,16 +100,29 @@ async function api(path: string, init?: RequestInit): Promise<any> {
   return j
 }
 
-function FileList({ title, files, selected, onPick }: {
+function FileList({ title, files, selected, checked, onPick, onToggleAll, onToggle }: {
   title: string
   files: GitFile[]
   selected: string | null
+  checked: ReadonlySet<string>
   onPick: (p: string) => void
+  onToggleAll: (toggleOn: boolean) => void
+  onToggle: (p: string) => void
 }) {
   if (!files.length) return null
+  const allChecked = files.length > 0 && files.every((f) => checked.has(f.path))
   return (
     <section>
-      <h3>{title + ' (' + files.length + ')'}</h3>
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={allChecked}
+          onChange={(e) => onToggleAll(e.target.checked)}
+          title={allChecked ? '取消全选' : '全选'}
+          style={{ margin: 0, width: 14, height: 14, cursor: 'pointer' }}
+        />
+        <span>{title + ' (' + files.length + ')'}</span>
+      </h3>
       {files.map((f) => (
         <div
           key={f.path}
@@ -117,6 +130,13 @@ function FileList({ title, files, selected, onPick }: {
           onClick={() => onPick(f.path)}
           title={f.path}
         >
+          <input
+            type="checkbox"
+            checked={checked.has(f.path)}
+            onChange={(e) => onToggle(f.path)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 14, height: 14, cursor: 'pointer', flex: 'none' }}
+          />
           <span className="icon">{gitIcon(f.index)}</span>
           <span className="name">{f.path}</span>
         </div>
@@ -159,6 +179,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const [busyCmd, setBusyCmd] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastOp, setLastOp] = useState<string | null>(null)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
   const repoRef = useRef('')
   const sessionRef = useRef(sessionId)
 
@@ -209,7 +230,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       })
       setLastOp((j.stdout || j.stderr || `${cmd} 完成`).slice(0, 400))
       setMsg('')
-      if (cmd === 'commit') { setDiff(''); setSelFile(null) }
+      if (cmd === 'commit') { setDiff(''); setSelFile(null); setChecked(new Set()) }
     } catch (e) { setError(String((e as Error).message || e)) }
     finally { setBusyCmd(null) }
     await refresh()
@@ -231,9 +252,30 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
     await runOp('add', ['-A'])
   }
 
+  const toggleFile = (p: string): void => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(p)) next.delete(p); else next.add(p)
+      return next
+    })
+  }
+
+  const toggleAllRaw = (files: GitFile[], on: boolean): void => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      for (const f of files) { if (on) next.add(f.path); else next.delete(f.path) }
+      return next
+    })
+  }
+
   const commit = async (): Promise<void> => {
     const m = msg.trim()
     if (!m) { setError('请填写提交信息'); return }
+    // 勾选了文件：先暂存这些文件，再提交它们
+    if (checked.size > 0) {
+      await runOp('add', Array.from(checked))
+    }
+    // 后端 commitWithChanges：有暂存则提交暂存；否则自动暂存未暂存的已跟踪改动
     await runOp('commit', ['-m', m])
   }
 
@@ -272,8 +314,8 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
             </div>
             <div className="split">
               <div className="files">
-                <FileList title="已暂存" files={status.staged} selected={selFile} onPick={(p) => void pick(p)} />
-                <FileList title="未暂存" files={status.unstaged} selected={selFile} onPick={(p) => void pick(p)} />
+                <FileList title="已暂存" files={status.staged} selected={selFile} checked={checked} onPick={(p) => void pick(p)} onToggleAll={(on) => toggleAllRaw(status.staged, on)} onToggle={(p) => toggleFile(p)} />
+                <FileList title="未暂存" files={status.unstaged} selected={selFile} checked={checked} onPick={(p) => void pick(p)} onToggleAll={(on) => toggleAllRaw(status.unstaged, on)} onToggle={(p) => toggleFile(p)} />
                 {!status.staged.length && !status.unstaged.length && <div className="empty">没有改动</div>}
               </div>
               <div className="detail">

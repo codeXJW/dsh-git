@@ -275,3 +275,20 @@ export async function findGitRepos(root: string, depth = 1): Promise<string[]> {
   }
   return result
 }
+
+/**
+ * 提交一条消息，语义对齐「改文件直接提交」：
+ *  - 若已有暂存内容：直接 `git commit`（提交当前暂存区）；
+ *  - 若暂存区为空但有未暂存「已跟踪」改动：先 `git add -u`
+ *    （只暂存已跟踪改动，不含未跟踪文件），再 `git commit`。
+ * 行为等价于 `git commit -a`，但更精细（不碰未跟踪文件）。
+ */
+export async function commitWithChanges(path: string, message: string): Promise<GitResult> {
+  const hasStaged = (await runGit(path, 'diff', { args: ['--cached', '--quiet'], timeoutMs: 30_000 })).code !== 0
+  const hasUnstagedTracked = (await runGit(path, 'diff', { args: ['--quiet'], timeoutMs: 30_000 })).code !== 0
+  if (!hasStaged && hasUnstagedTracked) {
+    const add = await runGit(path, 'add', { args: ['-u'], timeoutMs: 60_000 })
+    if (add.code !== 0) return add
+  }
+  return runGit(path, 'commit', { args: ['-m', message], timeoutMs: 60_000 })
+}

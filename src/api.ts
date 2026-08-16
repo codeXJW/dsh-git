@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, pushWithUpstream, recentLog, runGit } from './git.js'
+import { GitExecError, commitWithChanges, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, pushWithUpstream, recentLog, runGit } from './git.js'
 
 const PREFIX = '/@dsh-external/dsh-git/api'
 
@@ -160,10 +160,17 @@ export function mountGitApi(ctx: ApiContext): () => void {
           }
           const subArgs = body.subargs ?? body.args ?? []
           const argList = Array.isArray(subArgs) ? subArgs : [String(subArgs)]
-          // push 走「无上游自动 -u origin <branch>」的封装；其余命令原样执行。
-          const result = rest === 'push'
-            ? await pushWithUpstream(repo, argList)
-            : await runGit(repo, rest, { args: argList, stdin: body.stdin, timeoutMs: body.timeoutMs })
+          // push：无上游自动 -u；commit：提交前自动暂存未暂存的已跟踪改动。
+          let result
+          if (rest === 'push') {
+            result = await pushWithUpstream(repo, argList)
+          } else if (rest === 'commit') {
+            const mIdx = argList.indexOf('-m')
+            const message = mIdx !== -1 && argList[mIdx + 1] ? argList[mIdx + 1] : (typeof body.message === 'string' ? body.message : '')
+            result = await commitWithChanges(repo, message)
+          } else {
+            result = await runGit(repo, rest, { args: argList, stdin: body.stdin, timeoutMs: body.timeoutMs })
+          }
           json(res, { ok: result.code === 0, repo, code: result.code, stdout: result.stdout, stderr: result.stderr })
         }
       }
