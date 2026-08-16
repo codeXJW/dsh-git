@@ -61,6 +61,10 @@ const CSS = `
 .dsh-git .spinner{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:dshGitSpin .7s linear infinite}
 @keyframes dshGitSpin{to{transform:rotate(360deg)}}
 .dsh-git button.loading{opacity:.65;cursor:progress}
+.dsh-git .dsh-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 16px;border-radius:8px;font:13px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.18);animation:dshToastIn .2s ease}
+.dsh-git .dsh-toast.ok{background:#1a7f37;color:#fff}
+.dsh-git .dsh-toast.err{background:#cf222e;color:#fff}
+@keyframes dshToastIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .dsh-git .split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:10px;align-items:start;margin:8px 0}
 .dsh-git .split .files{max-height:calc(100vh - 320px);overflow:auto;display:flex;flex-direction:column;gap:8px}
 .dsh-git .split .files section{margin:0}
@@ -175,13 +179,21 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const [selFile, setSelFile] = useState<string | null>(null)
   const [log, setLog] = useState('')
   const [showLog, setShowLog] = useState(false)
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const [msg, setMsg] = useState('')
   const [busyCmd, setBusyCmd] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [lastOp, setLastOp] = useState<string | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const repoRef = useRef('')
   const sessionRef = useRef(sessionId)
+
+  const showToast = (kind: 'ok' | 'err', text: string): void => {
+    setToast({ kind, text })
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 4000)
+  }
+
 
   useEffect(() => { sessionRef.current = sessionId }, [sessionId])
   useEffect(() => { repoRef.current = repo }, [repo])
@@ -220,18 +232,33 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
     finally { setBusyCmd(null) }
   }
 
+  const SUCCESS_MSG: Record<string, string> = {
+    commit: '已提交',
+    push: '已推送',
+    pull: '已拉取',
+    fetch: '已 Fetch',
+    add: '已暂存',
+  }
+
   const runOp = async (cmd: string, args: string[]): Promise<void> => {
     if (!repoRef.current) return
-    setBusyCmd(cmd); setError(null); setLastOp(null)
+    setBusyCmd(cmd); setError(null)
     try {
       const j = await api(`/${cmd}?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ subargs: args }),
       })
-      setLastOp((j.stdout || j.stderr || `${cmd} 完成`).slice(0, 400))
+      if (cmd === 'commit' || cmd === 'push' || cmd === 'add') {
+        // 提取 commit hash / push 结果作为细节，否则用友好文案
+        const detail = (j.stdout || '').split('\n').find((l: string) => l.includes(']')) ?? ''
+        const head = detail.split(']')[0].replace('[', '') ?? ''
+        showToast('ok', `${SUCCESS_MSG[cmd] ?? cmd}${head ? ' ' + head : ''}`)
+      } else {
+        showToast('ok', SUCCESS_MSG[cmd] ?? `${cmd} 完成`)
+      }
       setMsg('')
       if (cmd === 'commit') { setDiff(''); setSelFile(null); setChecked(new Set()) }
-    } catch (e) { setError(String((e as Error).message || e)) }
+    } catch (e) { showToast('err', String((e as Error).message || e)) }
     finally { setBusyCmd(null) }
     await refresh()
   }
@@ -296,7 +323,13 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       <div className="dsh-git">
         <h2>🕊 Git</h2>
         {error && <div className="err">{error}</div>}
-        {lastOp && <div className="ok">{lastOp}</div>}
+        <div className="dsh-git-root" style={{ position: 'relative' }}>
+          {toast && (
+            <div className={'dsh-toast ' + (toast.kind === 'ok' ? 'ok' : 'err')}>
+              {toast.kind === 'ok' ? '✓ ' : '✕ '}{toast.text}
+            </div>
+          )}
+        </div>
         <div className="row">
           <select value={repo} onChange={(e) => { setRepo(e.target.value); setDiff(''); setLog(''); setSelFile(null) }}>
             {repos.map((p) => <option key={p} value={p}>{short(p)}</option>)}
