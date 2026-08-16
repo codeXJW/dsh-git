@@ -58,6 +58,9 @@ const CSS = `
 .dsh-git pre{margin:0;padding:8px 10px;overflow:auto;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--dsw-alias-bg-layer-1,#f6f8fa);white-space:pre-wrap;word-break:break-all;max-height:40vh}
 .dsh-git .dplus{color:#1a7f37}.dsh-git .dminus{color:#cf222e}
 .dsh-git .pill{display:inline-block;font-size:11px;border-radius:9px;padding:0 8px;background:var(--dsw-alias-bg-layer-3,#eaeef2)}
+.dsh-git .spinner{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:dshGitSpin .7s linear infinite}
+@keyframes dshGitSpin{to{transform:rotate(360deg)}}
+.dsh-git button.loading{opacity:.65;cursor:progress}
 .dsh-git .split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:10px;align-items:start;margin:8px 0}
 .dsh-git .split .files{max-height:calc(100vh - 320px);overflow:auto;display:flex;flex-direction:column;gap:8px}
 .dsh-git .split .files section{margin:0}
@@ -122,6 +125,26 @@ function FileList({ title, files, selected, onPick }: {
   )
 }
 
+/* ── 按钮（内嵌 loading） ─────────────────────────────────── */
+function BusyButton({ loading, disabled, onClick, children, className }: {
+  loading: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+  className?: string
+}): React.ReactNode {
+  return (
+    <button
+      className={[className, loading ? 'loading' : ''].filter(Boolean).join(' ')}
+      disabled={disabled || loading}
+      onClick={onClick}
+    >
+      {loading && <span className="spinner" />}
+      {children}
+    </button>
+  )
+}
+
 /* ── 面板主组件 ─────────────────────────────────────────────── */
 export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const sessionId = props.sessionId ?? ''
@@ -133,7 +156,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const [log, setLog] = useState('')
   const [showLog, setShowLog] = useState(false)
   const [msg, setMsg] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busyCmd, setBusyCmd] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastOp, setLastOp] = useState<string | null>(null)
   const repoRef = useRef('')
@@ -157,28 +180,28 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const refresh = async (): Promise<void> => {
     const r = repoRef.current
     if (!r) { setStatus(null); return }
-    setError(null); setBusy('加载状态')
+    setError(null); setBusyCmd('refresh')
     try {
       const j = await api(`/status?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`)
       setStatus(j.status)
     } catch (e) { setStatus(null); setError(String((e as Error).message || e)) }
-    setBusy(null)
+    setBusyCmd(null)
   }
 
   useEffect(() => { if (repo) void refresh() }, [repo])
 
   const pick = async (p: string): Promise<void> => {
-    setSelFile(p); setBusy('读取 diff')
+    setSelFile(p); setBusyCmd('diff')
     try {
       const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}&session=${encodeURIComponent(sessionRef.current)}`)
       setDiff(j.diff || '（无差异）')
     } catch (e) { setDiff(`读取失败：${String((e as Error).message || e)}`) }
-    setBusy(null)
+    setBusyCmd(null)
   }
 
   const runOp = async (cmd: string, args: string[]): Promise<void> => {
-    if (!repoRef.current) return
-    setBusy(cmd); setError(null); setLastOp(null)
+    if (!repoRef.current || busyCmd) return
+    setBusyCmd(cmd); setError(null); setLastOp(null)
     try {
       const j = await api(`/${cmd}?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -188,18 +211,18 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       setMsg('')
       if (cmd === 'commit') { setDiff(''); setSelFile(null) }
     } catch (e) { setError(String((e as Error).message || e)) }
-    setBusy(null)
+    setBusyCmd(null)
     await refresh()
   }
 
   const toggleLog = async (): Promise<void> => {
     if (!showLog) {
-      setBusy('读取历史')
+      setBusyCmd('log')
       try {
         const j = await api(`/log?path=${encodeURIComponent(repoRef.current)}&n=30&session=${encodeURIComponent(sessionRef.current)}`)
         setLog(j.lines || '')
       } catch (e) { setLog(`读取失败：${String((e as Error).message || e)}`) }
-      setBusy(null)
+      setBusyCmd(null)
     }
     setShowLog(!showLog)
   }
@@ -236,8 +259,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
           <select value={repo} onChange={(e) => { setRepo(e.target.value); setDiff(''); setLog(''); setSelFile(null) }}>
             {repos.map((p) => <option key={p} value={p}>{short(p)}</option>)}
           </select>
-          <button onClick={() => void refresh()}>刷新</button>
-          {busy && <span className="meta">{busy}…</span>}
+          <BusyButton loading={busyCmd === 'refresh'} onClick={() => void refresh()}>刷新</BusyButton>
         </div>
 
         {status ? (
@@ -271,12 +293,12 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
               <div style={{ padding: 8 }}>
                 <textarea placeholder="提交信息…" value={msg} onChange={(e) => setMsg(e.target.value)} />
                 <div className="row">
-                  <button className="primary" onClick={() => void commit()} disabled={!status.staged.length && !status.unstaged.length}>提交</button>
-                  <button onClick={() => void stageAll()} disabled={!status.staged.length && !status.unstaged.length && !status.untracked.length}>暂存全部</button>
-                  <button onClick={() => void runOp('pull', [])} disabled={!status.hasRemote}>拉取</button>
-                  <button onClick={() => void runOp('push', [])} disabled={!status.hasCommits}>推送</button>
-                  <button onClick={() => void runOp('fetch', [])}>Fetch</button>
-                  <button onClick={() => void toggleLog()}>{showLog ? '收起历史' : '历史'}</button>
+                  <BusyButton className="primary" loading={busyCmd === 'commit'} disabled={!status.staged.length && !status.unstaged.length} onClick={() => void commit()}>提交</BusyButton>
+                  <BusyButton loading={busyCmd === 'add'} disabled={!status.staged.length && !status.unstaged.length && !status.untracked.length} onClick={() => void stageAll()}>暂存全部</BusyButton>
+                  <BusyButton loading={busyCmd === 'pull'} disabled={!status.hasRemote} onClick={() => void runOp('pull', [])}>拉取</BusyButton>
+                  <BusyButton loading={busyCmd === 'push'} disabled={!status.hasCommits} onClick={() => void runOp('push', [])}>推送</BusyButton>
+                  <BusyButton loading={busyCmd === 'fetch'} onClick={() => void runOp('fetch', [])}>Fetch</BusyButton>
+                  <BusyButton loading={busyCmd === 'log'} onClick={() => void toggleLog()}>{showLog ? '收起历史' : '历史'}</BusyButton>
                 </div>
               </div>
             </section>
