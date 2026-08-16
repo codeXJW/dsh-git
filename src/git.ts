@@ -6,6 +6,7 @@
  * cmd = 'git' arg0 = subcommand，args = 子命令参数（不含 git 本身）。
  */
 import { execFile } from 'node:child_process'
+import { join } from 'node:path'
 
 /** execFile 的异步化签名（含 input 的宽松版本），便于把 stdin 作为字符串写入。 */
 type ExecFile = (
@@ -210,4 +211,30 @@ export async function localBranches(path: string): Promise<string> {
 export async function isRepo(path: string): Promise<boolean> {
   const r = await runGit(path, 'rev-parse', { args: ['--is-inside-work-tree'] })
   return r.code === 0 && r.stdout === 'true'
+}
+
+/**
+ * 在一个工作区目录里找所有 git 仓库：
+ *  - 工作区根目录本身算一个（若它是仓库）；
+ *  - 直接子目录里是仓库的也算（一个工作区可含多个 git 项目）。
+ * 用目录里是否存在 `.git` 判断；返回绝对路径列表。目录不可读时跳过。
+ */
+export async function findGitRepos(root: string, depth = 1): Promise<string[]> {
+  const result: string[] = []
+  const fs = await import('node:fs')
+  if (fs.existsSync(join(root, '.git'))) result.push(root)
+  if (depth <= 1) {
+    let entries: string[] = []
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => join(root, d.name))
+    } catch {
+      return result
+    }
+    for (const sub of entries) {
+      if (fs.existsSync(join(sub, '.git'))) result.push(sub)
+    }
+  }
+  return result
 }

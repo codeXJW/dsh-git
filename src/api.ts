@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, diffOf, inspectRepo, isRepo, localBranches, recentLog, runGit } from './git.js'
+import { GitExecError, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, recentLog, runGit } from './git.js'
 
 const PREFIX = '/@dsh-external/dsh-git/api'
 
@@ -19,9 +19,9 @@ interface WebServerLike {
   }): () => void
 }
 
-/** host workspace 注册表最小面：拿全部仓库路径候选。 */
+/** host workspace 注册表最小面：拿全部工作区（含 session→workspace 映射）。 */
 interface WorkspaceLike {
-  list(): Array<{ path: string }>
+  list(): Array<{ path: string; sessionIds: readonly string[] }>
 }
 
 type ApiContext = Context & {
@@ -73,14 +73,24 @@ const ALLOWED_COMMANDS = new Set([
 export function mountGitApi(ctx: ApiContext): () => void {
   const ws = ctx.webServer
 
-  /** 解析目标仓库；缺省取第一个工作区路径。 */
-  async function resolveRepo(url: URL): Promise<string | null> {
+  /** 当前会话所属工作区目录；无 session 参数则取第一个工作区。 */
+  function currentWorkspacePath(session?: string): string | undefined {
+    const list = ctx.workspaceRegistry.list()
+    if (session) {
+      const hit = list.find((w) => w.sessionIds.includes(session as any))
+      if (hit) return hit.path
+    }
+    return list.length > 0 ? list[0].path : undefined
+  }
+
+  /** 目标仓库解析：优先 ?path= 显式指定，否则取当前会话工作区里第一个 git 仓库。 */
+  async function resolveRepo(url: URL, session?: string): Promise<string | null> {
     const explicit = param(url, 'path')
     if (explicit) return explicit
-    const reg = ctx.workspaceRegistry
-    const list = reg.list()
-    if (list.length > 0) return list[0].path
-    return null
+    const wsPath = currentWorkspacePath(session)
+    if (!wsPath) return null
+    const repos = await findGitRepos(wsPath)
+    return repos.length > 0 ? repos[0] : null
   }
 
   const handler = async (req: any, res: any): Promise<void> => {
@@ -88,23 +98,21 @@ export function mountGitApi(ctx: ApiContext): () => void {
     const pathname = url.pathname
     const method = (req.method ?? 'GET').toUpperCase()
     const rest = pathname.slice(PREFIX.length).replace(/^\/+/, '')
+    const session = param(url, 'session')
 
     try {
-      // /api/repos —— 返回「工作区里所有 git 仓库」候选
+      // /api/repos?session=<id> —— 返回「当前会话工作区里所有 git 仓库」候选
       if (method === 'GET' && rest === 'repos') {
-        const reg = ctx.workspaceRegistry
-        const cands = reg.list().map((w) => w.path)
-        const repos: string[] = []
-        for (const p of cands) {
-          if (await isRepo(p)) repos.push(p)
-        }
-        ok(res, { repos })
+        const wsPath = currentWorkspacePath(session)
+        if (!wsPath) { ok(res, { repos: [], workspace: null }); return }
+        const repos = await findGitRepos(wsPath)
+        ok(res, { repos, workspace: wsPath })
         return
       }
 
-      const repo = await resolveRepo(url)
+      const repo = await resolveRepo(url, session)
       if (!repo) {
-        badJson(res, '未指定仓库路径（?path=/abs/dir）且无可用 DSH 工作区')
+        badJson(res, '未找到可用 git 仓库（?path=/abs/repo 显式指定，或让当前会话工作区位于 git 仓库）')
         return
       }
       if (!(await isRepo(repo))) {

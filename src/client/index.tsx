@@ -115,7 +115,8 @@ function FileList({ title, files, selected, onPick }: {
 }
 
 /* ── 面板主组件 ─────────────────────────────────────────────── */
-export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
+export function GitPanel(props: { sessionId?: string }): React.ReactNode {
+  const sessionId = props.sessionId ?? ''
   const [repos, setRepos] = useState<string[]>([])
   const [repo, setRepo] = useState<string>('')
   const [status, setStatus] = useState<RepoStatus | null>(null)
@@ -128,26 +129,29 @@ export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
   const [error, setError] = useState<string | null>(null)
   const [lastOp, setLastOp] = useState<string | null>(null)
   const repoRef = useRef('')
+  const sessionRef = useRef(sessionId)
 
+  useEffect(() => { sessionRef.current = sessionId }, [sessionId])
   useEffect(() => { repoRef.current = repo }, [repo])
 
   const loadRepos = async (): Promise<void> => {
     try {
-      const j = await api('/repos')
+      const q = sessionRef.current ? `?session=${encodeURIComponent(sessionRef.current)}` : ''
+      const j = await api(`/repos${q}`)
       const list = j.repos ?? []
       setRepos(list)
       if (list.length) { setRepo(list[0]); repoRef.current = list[0] }
     } catch (e) { setError(String((e as Error).message || e)) }
   }
 
-  useEffect(() => { void loadRepos() }, [])
+  useEffect(() => { void loadRepos() }, [sessionId])
 
   const refresh = async (): Promise<void> => {
     const r = repoRef.current
     if (!r) { setStatus(null); return }
     setError(null); setBusy('加载状态')
     try {
-      const j = await api(`/status?path=${encodeURIComponent(r)}`)
+      const j = await api(`/status?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`)
       setStatus(j.status)
     } catch (e) { setStatus(null); setError(String((e as Error).message || e)) }
     setBusy(null)
@@ -158,7 +162,7 @@ export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
   const pick = async (p: string): Promise<void> => {
     setSelFile(p); setBusy('读取 diff')
     try {
-      const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}`)
+      const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}&session=${encodeURIComponent(sessionRef.current)}`)
       setDiff(j.diff || '（无差异）')
     } catch (e) { setDiff(`读取失败：${String((e as Error).message || e)}`) }
     setBusy(null)
@@ -168,7 +172,7 @@ export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
     if (!repoRef.current) return
     setBusy(cmd); setError(null); setLastOp(null)
     try {
-      const j = await api(`/${cmd}?path=${encodeURIComponent(repoRef.current)}`, {
+      const j = await api(`/${cmd}?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ subargs: args }),
       })
@@ -184,7 +188,7 @@ export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
     if (!showLog) {
       setBusy('读取历史')
       try {
-        const j = await api(`/log?path=${encodeURIComponent(repoRef.current)}&n=30`)
+        const j = await api(`/log?path=${encodeURIComponent(repoRef.current)}&n=30&session=${encodeURIComponent(sessionRef.current)}`)
         setLog(j.lines || '')
       } catch (e) { setLog(`读取失败：${String((e as Error).message || e)}`) }
       setBusy(null)
@@ -238,7 +242,6 @@ export function GitPanel(_props: Record<string, unknown>): React.ReactNode {
             </div>
             <FileList title="已暂存" files={status.staged} selected={selFile} onPick={(p) => void pick(p)} />
             <FileList title="未暂存" files={status.unstaged} selected={selFile} onPick={(p) => void pick(p)} />
-            <FileList title="未跟踪" files={status.untracked} selected={selFile} onPick={(p) => void pick(p)} />
 
             {diff && (
               <section>
