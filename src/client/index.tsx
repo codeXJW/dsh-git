@@ -31,7 +31,7 @@ interface RepoStatus {
 
 /* ── CSS（局部，用 DSH 设计 token） ─────────────────────────── */
 const CSS = `
-.dsh-git{font:13px/1.6 system-ui,sans-serif;color:var(--dsw-alias-label-primary,#1f2328);padding:6px;max-width:980px}
+.dsh-git{font:13px/1.6 system-ui,sans-serif;color:var(--dsw-alias-label-primary,#1f2328);padding:6px;max-width:1100px;margin:0 auto;width:100%;box-sizing:border-box}
 .dsh-git h2{font-size:15px;margin:0 0 8px;font-weight:600}
 .dsh-git .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 .dsh-git button{font:inherit;padding:4px 10px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,#d8dee4);background:var(--dsw-alias-bg-layer-2,#fff);color:inherit;cursor:pointer}
