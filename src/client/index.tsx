@@ -57,6 +57,13 @@ const CSS = `
 .dsh-git pre{margin:0;padding:8px 10px;overflow:auto;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--dsw-alias-bg-layer-1,#f6f8fa);white-space:pre-wrap;word-break:break-all;max-height:40vh}
 .dsh-git .dplus{color:#1a7f37}.dsh-git .dminus{color:#cf222e}
 .dsh-git .pill{display:inline-block;font-size:11px;border-radius:9px;padding:0 8px;background:var(--dsw-alias-bg-layer-3,#eaeef2)}
+.dsh-git .split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:10px;align-items:start;margin:8px 0}
+.dsh-git .split .files{max-height:calc(100vh - 320px);overflow:auto;display:flex;flex-direction:column;gap:8px}
+.dsh-git .split .files section{margin:0}
+.dsh-git .split .detail{position:sticky;top:0}
+.dsh-git .split .detail section{margin:0}
+.dsh-git .split .detail pre{max-height:calc(100vh - 340px)}
+@media (max-width:700px){.dsh-git .split{grid-template-columns:1fr}}
 `
 
 /* ── 工具 ────────────────────────────────────────────────────── */
@@ -240,15 +247,23 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
               {status.behind ? <span className="pill">↓{status.behind}</span> : null}
               {status.total === 0 && <span className="meta">✓ 工作区干净</span>}
             </div>
-            <FileList title="已暂存" files={status.staged} selected={selFile} onPick={(p) => void pick(p)} />
-            <FileList title="未暂存" files={status.unstaged} selected={selFile} onPick={(p) => void pick(p)} />
-
-            {diff && (
-              <section>
-                <h3>变更内容：{selFile}</h3>
-                <pre dangerouslySetInnerHTML={{ __html: diffHtml(diff) }} />
-              </section>
-            )}
+            <div className="split">
+              <div className="files">
+                <FileList title="已暂存" files={status.staged} selected={selFile} onPick={(p) => void pick(p)} />
+                <FileList title="未暂存" files={status.unstaged} selected={selFile} onPick={(p) => void pick(p)} />
+                {!status.staged.length && !status.unstaged.length && <div className="empty">没有改动</div>}
+              </div>
+              <div className="detail">
+                {diff ? (
+                  <section>
+                    <h3>变更内容：{selFile}</h3>
+                    <pre dangerouslySetInnerHTML={{ __html: diffHtml(diff) }} />
+                  </section>
+                ) : (
+                  <section><h3>变更内容</h3><div className="empty">← 点击左侧文件查看 diff</div></section>
+                )}
+              </div>
+            </div>
 
             <section>
               <h3>操作</h3>
