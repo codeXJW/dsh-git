@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, recentLog, runGit } from './git.js'
+import { GitExecError, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, pushWithUpstream, recentLog, runGit } from './git.js'
 
 const PREFIX = '/@dsh-external/dsh-git/api'
 
@@ -159,11 +159,11 @@ export function mountGitApi(ctx: ApiContext): () => void {
             return
           }
           const subArgs = body.subargs ?? body.args ?? []
-          const result = await runGit(repo, rest, {
-            args: Array.isArray(subArgs) ? subArgs : [String(subArgs)],
-            stdin: body.stdin,
-            timeoutMs: body.timeoutMs,
-          })
+          const argList = Array.isArray(subArgs) ? subArgs : [String(subArgs)]
+          // push 走「无上游自动 -u origin <branch>」的封装；其余命令原样执行。
+          const result = rest === 'push'
+            ? await pushWithUpstream(repo, argList)
+            : await runGit(repo, rest, { args: argList, stdin: body.stdin, timeoutMs: body.timeoutMs })
           json(res, { ok: result.code === 0, repo, code: result.code, stdout: result.stdout, stderr: result.stderr })
         }
       }

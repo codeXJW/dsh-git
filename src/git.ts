@@ -106,7 +106,9 @@ export async function gitOk(cwd: string, cmd: string, opts?: RunGitOptions): Pro
   return r.stdout
 }
 
-const BRANCH_RE = /^\* (.+)$/m
+// `--porcelain=v1 -b` 的首行是 `## master...origin/master [ahead 1, behind 2]`
+// 或 `## HEAD (no branch)`（detached）。这里只取分支名部分。
+const BRANCH_RE = /^## (.+?)(?:\.\.\.| \[|$)/
 
 /** 解析 `git status --porcelain=v1 -b` 每行 → { index, worktree, path }。 */
 export function parseStatus(porcelain: string): Array<{
@@ -127,7 +129,7 @@ export function parseStatus(porcelain: string): Array<{
 /** 从 `-b` porcelain 首行解析当前分支（含 detached HEAD 情形）。 */
 export function parseBranch(statusHead: string): string {
   const m = BRANCH_RE.exec(statusHead)
-  if (m) return m[1]
+  if (m && m[1]) return m[1].trim()
   if (statusHead.startsWith('## HEAD')) return '(detached)'
   return '(unknown)'
 }
@@ -136,12 +138,46 @@ export interface RepoStatus {
   path: string
   branch: string
   hasRemote: boolean
+  /** 本地是否存在至少一个提交记录（`git rev-parse --verify HEAD` 是否成功）。 */
+  hasCommits: boolean
   ahead: number
   behind: number
   staged: Array<{ index: string; worktree: string; path: string }>
   unstaged: Array<{ index: string; worktree: string; path: string }>
   untracked: Array<{ index: string; worktree: string; path: string }>
   total: number
+}
+
+/** 本地是否有任一提交（HEAD 能否解析）。 */
+export async function hasCommits(path: string): Promise<boolean> {
+  const r = await runGit(path, 'rev-parse', { args: ['--verify', 'HEAD'] })
+  return r.code === 0
+}
+
+/** 给定仓库当前分支是否有已配置的上游（`git rev-parse --abbrev-ref @{u}`）。 */
+export async function hasUpstream(path: string): Promise<boolean> {
+  const r = await runGit(path, 'rev-parse', { args: ['--abbrev-ref', '@{u}'] })
+  return r.code === 0
+}
+
+/** 当前分支名（`git branch --show-current`；detached 返回空）。 */
+export async function currentBranch(path: string): Promise<string> {
+  const r = await runGit(path, 'branch', { args: ['--show-current'] })
+  return r.code === 0 ? r.stdout.trim() : ''
+}
+
+/**
+ * 执行一次「会建上游」的推送：若当前分支没有上游，自动追加
+ * `-u origin <branch>`（首次推送同时建立 origin/<branch> 跟踪）。
+ * 返回最终的 git push 结果。
+ */
+export async function pushWithUpstream(path: string, extra: readonly string[] = []): Promise<GitResult> {
+  const branch = await currentBranch(path)
+  if (branch && !(await hasUpstream(path))) {
+    const args = ['-u', 'origin', branch, ...extra]
+    return runGit(path, 'push', { args, timeoutMs: 180_000 })
+  }
+  return runGit(path, 'push', { args: [...extra], timeoutMs: 180_000 })
 }
 
 /**
@@ -177,6 +213,7 @@ export async function inspectRepo(path: string): Promise<RepoStatus> {
     path,
     branch,
     hasRemote: Boolean(remoteTrack),
+    hasCommits: await hasCommits(path),
     ahead,
     behind,
     staged,

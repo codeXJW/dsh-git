@@ -23,6 +23,7 @@ interface RepoStatus {
   ahead: number
   behind: number
   hasRemote: boolean
+  hasCommits: boolean
   staged: GitFile[]
   unstaged: GitFile[]
   untracked: GitFile[]
@@ -270,10 +271,10 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
               <div style={{ padding: 8 }}>
                 <textarea placeholder="提交信息…" value={msg} onChange={(e) => setMsg(e.target.value)} />
                 <div className="row">
-                  <button className="primary" onClick={() => void commit()}>提交</button>
-                  <button onClick={() => void stageAll()}>暂存全部</button>
+                  <button className="primary" onClick={() => void commit()} disabled={!status.staged.length && !status.unstaged.length}>提交</button>
+                  <button onClick={() => void stageAll()} disabled={!status.staged.length && !status.unstaged.length && !status.untracked.length}>暂存全部</button>
                   <button onClick={() => void runOp('pull', [])} disabled={!status.hasRemote}>拉取</button>
-                  <button onClick={() => void runOp('push', [])} disabled={!status.hasRemote}>推送</button>
+                  <button onClick={() => void runOp('push', [])} disabled={!status.hasCommits}>推送</button>
                   <button onClick={() => void runOp('fetch', [])}>Fetch</button>
                   <button onClick={() => void toggleLog()}>{showLog ? '收起历史' : '历史'}</button>
                 </div>

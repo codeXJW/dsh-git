@@ -4,7 +4,7 @@
  */
 import type { Context } from 'cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { diffOf, gitOk, inspectRepo, recentLog, runGit } from './git.js'
+import { diffOf, gitOk, inspectRepo, pushWithUpstream, recentLog, runGit } from './git.js'
 
 type AppContext = Context & {
   logger?: { info?(...a: any[]): void; warn?(...a: any[]): void }
@@ -140,7 +140,7 @@ export function registerGitTools(ctx: AppContext): () => void {
 
   disposers.push(ctx.tools.register(defineTool({
     name: 'git_push',
-    description: '推送当前分支到远程（git push）。可带 extra 参数。',
+    description: '推送当前分支到远程。若当前分支没配置上游，自动 git push -u origin <branch>（首次推送建立跟踪）。',
     parameters: {
       path: { type: 'string', description: '目标仓库绝对路径' },
       extra: { type: 'array', items: { type: 'string' }, description: '可选：额外 git 参数' },
@@ -152,7 +152,7 @@ export function registerGitTools(ctx: AppContext): () => void {
     isConcurrencySafe: () => false,
     async execute(args) {
       const extra = (args.extra ?? []).map(String)
-      const r = await runGit(repoOf(args.path), 'push', { args: extra, timeoutMs: 180_000 })
+      const r = await pushWithUpstream(repoOf(args.path), extra)
       if (r.code !== 0) throw new Error(r.stderr || `git push 失败（exit ${r.code}）`)
       return { stdout: r.stdout, stderr: r.stderr }
     },
