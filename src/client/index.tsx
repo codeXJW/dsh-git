@@ -39,8 +39,7 @@ const CSS = `
 .dsh-git button:hover{border-color:var(--dsw-alias-brand-primary,#2b5fdc)}
 .dsh-git button.primary{background:var(--dsw-alias-brand-primary,#2b5fdc);color:#fff;border-color:transparent}
 .dsh-git button:disabled{opacity:.5;cursor:default}
-.dsh-git select,.dsh-git textarea{font:inherit;padding:5px 8px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,#d8dee4);background:var(--dsw-alias-bg-layer-2,#fff);color:inherit;box-sizing:border-box}
-.dsh-git textarea{width:100%;min-height:62px;resize:vertical}
+.dsh-git select,.dsh-git input[type=text]{font:inherit;padding:4px 8px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,#d8dee4);background:var(--dsw-alias-bg-layer-2,#fff);color:inherit;box-sizing:border-box}
 .dsh-git select{width:auto;flex:1}
 .dsh-git .bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .dsh-git .meta{color:var(--dsw-alias-label-tertiary,#6e7781);font-size:12px}
@@ -66,8 +65,10 @@ const CSS = `
 .dsh-git .dsh-toast.err{background:#cf222e;color:#fff}
 @keyframes dshToastIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .dsh-git .split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:10px;align-items:start;margin:8px 0}
-.dsh-git .split .files{max-height:calc(100vh - 320px);overflow:auto;display:flex;flex-direction:column;gap:8px}
-.dsh-git .split .files section{margin:0}
+.dsh-git .split .files{height:calc(100vh - 320px);display:flex;flex-direction:column;gap:8px}
+.dsh-git .split .files section{margin:0;flex:1;min-height:0;display:flex;flex-direction:column}
+.dsh-git .split .files section>h3{flex:none}
+.dsh-git .split .files .file-list{flex:1;min-height:0;overflow-y:auto}
 .dsh-git .split .detail{position:sticky;top:0}
 .dsh-git .split .detail section{margin:0}
 .dsh-git .split .detail pre{max-height:calc(100vh - 340px)}
@@ -104,7 +105,7 @@ async function api(path: string, init?: RequestInit): Promise<any> {
   return j
 }
 
-function FileList({ title, files, selected, checked, onPick, onToggleAll, onToggle }: {
+function FileList({ title, files, selected, checked, onPick, onToggleAll, onToggle, onStage, onStageAll, onUnstage, onUnstageAll, onRestore, onRestoreAll }: {
   title: string
   files: GitFile[]
   selected: string | null
@@ -112,9 +113,19 @@ function FileList({ title, files, selected, checked, onPick, onToggleAll, onTogg
   onPick: (p: string) => void
   onToggleAll: (toggleOn: boolean) => void
   onToggle: (p: string) => void
+  onStage?: (p: string) => void
+  onStageAll?: () => void
+  onUnstage?: (p: string) => void
+  onUnstageAll?: () => void
+  onRestore?: (p: string) => void
+  onRestoreAll?: () => void
 }) {
   if (!files.length) return null
   const allChecked = files.length > 0 && files.every((f) => checked.has(f.path))
+  const btnStyle = (color: string): React.CSSProperties => ({
+    flex: 'none', fontSize: 12, padding: '0 6px', borderRadius: 5, lineHeight: '18px',
+    color, border: `1px solid ${color}22`, background: 'transparent', cursor: 'pointer', opacity: 0.7,
+  })
   return (
     <section>
       <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -126,7 +137,31 @@ function FileList({ title, files, selected, checked, onPick, onToggleAll, onTogg
           style={{ margin: 0, width: 14, height: 14, cursor: 'pointer' }}
         />
         <span>{title + ' (' + files.length + ')'}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {onStageAll && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onStageAll() }}
+              title="暂存全部文件"
+              style={{ fontSize: 11, padding: '1px 8px', borderRadius: 5, color: '#1a7f37', border: '1px solid rgba(26,127,55,.2)', background: 'rgba(26,127,55,.04)', cursor: 'pointer' }}
+            >暂存全部</button>
+          )}
+          {onUnstageAll && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onUnstageAll() }}
+              title="取消暂存全部"
+              style={{ fontSize: 11, padding: '1px 8px', borderRadius: 5, color: '#cf222e', border: '1px solid rgba(207,34,46,.2)', background: 'rgba(207,34,46,.04)', cursor: 'pointer' }}
+            >取消暂存</button>
+          )}
+          {onRestoreAll && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRestoreAll() }}
+              title="回滚所有未暂存改动"
+              style={{ fontSize: 11, padding: '1px 8px', borderRadius: 5, color: '#cf222e', border: '1px solid rgba(207,34,46,.2)', background: 'rgba(207,34,46,.04)', cursor: 'pointer' }}
+            >全部回滚</button>
+          )}
+        </span>
       </h3>
+      <div className="file-list">
       {files.map((f) => (
         <div
           key={f.path}
@@ -143,8 +178,36 @@ function FileList({ title, files, selected, checked, onPick, onToggleAll, onTogg
           />
           <span className="icon">{gitIcon(f.index)}</span>
           <span className="name">{f.path}</span>
+          {onStage && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onStage(f.path) }}
+              title={'暂存 ' + f.path}
+              style={btnStyle('#1a7f37')}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1' }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7' }}
+            >+</button>
+          )}
+          {onUnstage && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onUnstage(f.path) }}
+              title={'取消暂存 ' + f.path}
+              style={btnStyle('#cf222e')}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1' }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7' }}
+            >−</button>
+          )}
+          {onRestore && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRestore(f.path) }}
+              title={'回滚 ' + f.path}
+              style={btnStyle('#cf222e')}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1' }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7' }}
+            >↩</button>
+          )}
         </div>
       ))}
+      </div>
     </section>
   )
 }
@@ -187,6 +250,10 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const repoRef = useRef('')
   const sessionRef = useRef(sessionId)
+  const [branches, setBranches] = useState<string[]>([])
+  const [currentBranch, setCurrentBranch] = useState('')
+  const [showNewBranch, setShowNewBranch] = useState(false)
+  const [newBranchName, setNewBranchName] = useState('')
 
   const showToast = (kind: 'ok' | 'err', text: string): void => {
     setToast({ kind, text })
@@ -215,18 +282,30 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
     if (!r) { setStatus(null); return }
     setError(null); setBusyCmd('refresh')
     try {
-      const j = await api(`/status?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`)
-      setStatus(j.status)
+      // status 和 branches 独立请求：一个失败不影响另一个
+      const statusP = api(`/status?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`).catch(() => null)
+      const branchesP = api(`/branches?path=${encodeURIComponent(r)}&session=${encodeURIComponent(sessionRef.current)}`).catch(() => null)
+      const [statusJ, branchesJ] = await Promise.all([statusP, branchesP])
+      if (statusJ) {
+        setStatus(statusJ.status)
+      } else {
+        setStatus(null)
+        setError('读取仓库状态失败')
+      }
+      if (branchesJ) {
+        setBranches(branchesJ.branches ?? [])
+        setCurrentBranch(branchesJ.current ?? '')
+      }
     } catch (e) { setStatus(null); setError(String((e as Error).message || e)) }
     finally { setBusyCmd(null) }
   }
 
   useEffect(() => { if (repo) void refresh() }, [repo])
 
-  const pick = async (p: string): Promise<void> => {
+  const pick = async (p: string, staged = false): Promise<void> => {
     setSelFile(p); setBusyCmd('diff')
     try {
-      const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}&session=${encodeURIComponent(sessionRef.current)}`)
+      const j = await api(`/diff?path=${encodeURIComponent(repoRef.current)}&file=${encodeURIComponent(p)}&session=${encodeURIComponent(sessionRef.current)}${staged ? '&staged=1' : ''}`)
       setDiff(j.diff || '（无差异）')
     } catch (e) { setDiff(`读取失败：${String((e as Error).message || e)}`) }
     finally { setBusyCmd(null) }
@@ -279,6 +358,81 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
     await runOp('add', ['-A'])
   }
 
+  const doStage = async (file: string): Promise<void> => {
+    if (!repoRef.current || !file) return
+    setBusyCmd('stage')
+    try {
+      await api(`/stage?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ file }),
+      })
+      setDiff(''); setSelFile(null); setChecked(new Set())
+    } catch (e) { showToast('err', String((e as Error).message || e)) }
+    finally { setBusyCmd(null) }
+    await refresh()
+  }
+
+  const doUnstage = async (file?: string): Promise<void> => {
+    if (!repoRef.current) return
+    setBusyCmd('unstage')
+    try {
+      const body: Record<string, string> = {}
+      if (file) body.file = file
+      await api(`/unstage?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      setDiff(''); setSelFile(null); setChecked(new Set())
+    } catch (e) { showToast('err', String((e as Error).message || e)) }
+    finally { setBusyCmd(null) }
+    await refresh()
+  }
+
+  const doRestore = async (file?: string): Promise<void> => {
+    if (!repoRef.current) return
+    const label = file ? `回滚 ${file}` : '回滚全部未暂存改动'
+    if (!window.confirm(`确定${label}？此操作不可撤销。`)) return
+    setBusyCmd('restore'); setError(null)
+    try {
+      const body: Record<string, string> = {}
+      if (file) body.file = file
+      await api(`/restore?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      showToast('ok', `${label}成功`)
+      setDiff(''); setSelFile(null); setChecked(new Set())
+    } catch (e) { showToast('err', String((e as Error).message || e)) }
+    finally { setBusyCmd(null) }
+    await refresh()
+  }
+
+  const doSwitch = async (branch: string, create = false, force = false): Promise<void> => {
+    if (!repoRef.current || !branch) return
+    setBusyCmd('switch'); setError(null)
+    try {
+      const j = await api(`/switch?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ branch, create, force }),
+      })
+      showToast('ok', `已切换到 ${j.current ?? branch}`)
+      setBranches(j.branches ?? [])
+      setCurrentBranch(j.current ?? branch)
+      setShowNewBranch(false)
+      setNewBranchName('')
+      setDiff(''); setSelFile(null); setChecked(new Set())
+    } catch (e) {
+      const msg = String((e as Error).message || e)
+      // 工作区不干净时提示 force
+      if (msg.includes('未提交') || msg.includes('uncommitted')) {
+        setError(msg + '（勾选"强制"可丢弃未暂存改动）')
+      } else {
+        showToast('err', msg)
+      }
+    } finally { setBusyCmd(null) }
+    await refresh()
+  }
+
   const toggleFile = (p: string): void => {
     setChecked((prev) => {
       const next = new Set(prev)
@@ -298,12 +452,39 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const commit = async (): Promise<void> => {
     const m = msg.trim()
     if (!m) { setError('请填写提交信息'); return }
-    // 勾选了文件：先暂存这些文件，再提交它们
     if (checked.size > 0) {
       await runOp('add', Array.from(checked))
     }
-    // 后端 commitWithChanges：有暂存则提交暂存；否则自动暂存未暂存的已跟踪改动
     await runOp('commit', ['-m', m])
+  }
+
+  const commitAndPush = async (): Promise<void> => {
+    const m = msg.trim()
+    if (!m) { setError('请填写提交信息'); return }
+    setBusyCmd('push'); setError(null)
+    try {
+      // 1. 暂存勾选的文件
+      if (checked.size > 0) {
+        await api(`/add?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ subargs: Array.from(checked) }),
+        })
+      }
+      // 2. 提交
+      const cj = await api(`/commit?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ subargs: ['-m', m] }),
+      })
+      // 3. 推送（提交成功才推）
+      const pj = await api(`/push?path=${encodeURIComponent(repoRef.current)}&session=${encodeURIComponent(sessionRef.current)}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ subargs: [] }),
+      })
+      showToast('ok', '已提交并推送')
+      setMsg(''); setDiff(''); setSelFile(null); setChecked(new Set())
+    } catch (e) { showToast('err', String((e as Error).message || e)) }
+    finally { setBusyCmd(null) }
+    await refresh()
   }
 
   const logRows = log.split('\n').filter(Boolean).map((l) => {
@@ -340,15 +521,56 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
         {status ? (
           <>
             <div className="bar">
-              <span className="pill"><b>{status.branch}</b></span>
+              <select
+                value={currentBranch}
+                onChange={(e) => { void doSwitch(e.target.value) }}
+                disabled={busyCmd === 'switch'}
+                style={{ maxWidth: 180, fontWeight: 600, padding: '4px 10px' }}
+              >
+                {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <BusyButton loading={busyCmd === 'switch'} onClick={() => setShowNewBranch(!showNewBranch)}>{showNewBranch ? '取消' : '新建分支'}</BusyButton>
+              <BusyButton className="primary" loading={busyCmd === 'commit'} disabled={!status.staged.length && !status.unstaged.length} onClick={() => void commit()}>提交</BusyButton>
+              <BusyButton className="primary" loading={busyCmd === 'push'} disabled={!status.staged.length && !status.unstaged.length || !status.hasRemote} onClick={() => void commitAndPush()}>提交并推送</BusyButton>
+              <BusyButton loading={busyCmd === 'pull'} disabled={!status.hasRemote} onClick={() => void runOp('pull', [])}>拉取</BusyButton>
+              <BusyButton loading={busyCmd === 'push'} disabled={!status.hasCommits} onClick={() => void runOp('push', [])}>推送</BusyButton>
+              <BusyButton loading={busyCmd === 'log'} onClick={() => void toggleLog()}>{showLog ? '收起' : '历史'}</BusyButton>
               {status.ahead ? <span className="pill">↑{status.ahead}</span> : null}
               {status.behind ? <span className="pill">↓{status.behind}</span> : null}
-              {status.total === 0 && <span className="meta">✓ 工作区干净</span>}
+              {status.total === 0 && <span className="meta" style={{ marginLeft: 4 }}>✓ 干净</span>}
             </div>
+            <div className="row" style={{ margin: '6px 0' }}>
+              <input
+                type="text"
+                placeholder="提交信息…"
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void commit() } }}
+                style={{ font: 'inherit', padding: '4px 8px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l2,#d8dee4)', background: 'var(--dsw-alias-bg-layer-2,#fff)', color: 'inherit', flex: 1 }}
+              />
+            </div>
+            {showNewBranch && (
+              <div className="row" style={{ marginTop: 4 }}>
+                <input
+                  type="text"
+                  placeholder="新分支名…"
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newBranchName.trim()) void doSwitch(newBranchName.trim(), true) }}
+                  style={{ font: 'inherit', padding: '4px 8px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l2,#d8dee4)', background: 'var(--dsw-alias-bg-layer-2,#fff)', color: 'inherit', flex: 1, maxWidth: 260 }}
+                />
+                <BusyButton
+                  className="primary"
+                  loading={busyCmd === 'switch'}
+                  disabled={!newBranchName.trim()}
+                  onClick={() => void doSwitch(newBranchName.trim(), true)}
+                >创建并切换</BusyButton>
+              </div>
+            )}
             <div className="split">
               <div className="files">
-                <FileList title="已暂存" files={status.staged} selected={selFile} checked={checked} onPick={(p) => void pick(p)} onToggleAll={(on) => toggleAllRaw(status.staged, on)} onToggle={(p) => toggleFile(p)} />
-                <FileList title="未暂存" files={status.unstaged} selected={selFile} checked={checked} onPick={(p) => void pick(p)} onToggleAll={(on) => toggleAllRaw(status.unstaged, on)} onToggle={(p) => toggleFile(p)} />
+                <FileList title="已暂存" files={status.staged} selected={selFile} checked={checked} onPick={(p) => void pick(p, true)} onToggleAll={(on) => toggleAllRaw(status.staged, on)} onToggle={(p) => toggleFile(p)} onUnstage={(p) => void doUnstage(p)} onUnstageAll={() => void doUnstage()} />
+                <FileList title="未暂存" files={status.unstaged} selected={selFile} checked={checked} onPick={(p) => void pick(p)} onToggleAll={(on) => toggleAllRaw(status.unstaged, on)} onToggle={(p) => toggleFile(p)} onStage={(p) => void doStage(p)} onStageAll={() => void stageAll()} onRestore={(p) => void doRestore(p)} onRestoreAll={() => void doRestore()} />
                 {!status.staged.length && !status.unstaged.length && <div className="empty">没有改动</div>}
               </div>
               <div className="detail">
@@ -362,21 +584,6 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
                 )}
               </div>
             </div>
-
-            <section>
-              <h3>操作</h3>
-              <div style={{ padding: 8 }}>
-                <textarea placeholder="提交信息…" value={msg} onChange={(e) => setMsg(e.target.value)} />
-                <div className="row">
-                  <BusyButton className="primary" loading={busyCmd === 'commit'} disabled={!status.staged.length && !status.unstaged.length} onClick={() => void commit()}>提交</BusyButton>
-                  <BusyButton loading={busyCmd === 'add'} disabled={!status.staged.length && !status.unstaged.length && !status.untracked.length} onClick={() => void stageAll()}>暂存全部</BusyButton>
-                  <BusyButton loading={busyCmd === 'pull'} disabled={!status.hasRemote} onClick={() => void runOp('pull', [])}>拉取</BusyButton>
-                  <BusyButton loading={busyCmd === 'push'} disabled={!status.hasCommits} onClick={() => void runOp('push', [])}>推送</BusyButton>
-                  <BusyButton loading={busyCmd === 'fetch'} onClick={() => void runOp('fetch', [])}>Fetch</BusyButton>
-                  <BusyButton loading={busyCmd === 'log'} onClick={() => void toggleLog()}>{showLog ? '收起历史' : '历史'}</BusyButton>
-                </div>
-              </div>
-            </section>
 
             {showLog && (
               <section>

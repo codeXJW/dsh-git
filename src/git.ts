@@ -244,6 +244,56 @@ export async function localBranches(path: string): Promise<string> {
   return gitOk(path, 'branch', { args: ['--list', '--no-color'] })
 }
 
+/** 解析 `git branch --list --no-color` 输出为分支名数组（当前分支排首位）。 */
+export async function gitBranchList(path: string): Promise<{ current: string; branches: string[] }> {
+  const raw = await localBranches(path)
+  const branches: string[] = []
+  let current = ''
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (trimmed.startsWith('* ')) {
+      const name = trimmed.slice(2).trim()
+      current = name
+      branches.unshift(name)
+    } else {
+      branches.push(trimmed)
+    }
+  }
+  return { current, branches }
+}
+
+/** 读取当前工作区状态，判断是否"干净"（无暂存/未暂存/未跟踪改动）。 */
+export async function isWorkingTreeClean(path: string): Promise<boolean> {
+  const r = await runGit(path, 'status', { args: ['--porcelain=v1'] })
+  return r.code === 0 && r.stdout.trim() === ''
+}
+
+export interface SwitchBranchOptions {
+  /** 目标分支名。 */
+  branch: string
+  /** 若目标分支不存在，是否自动创建（等价 `git switch -c`）。 */
+  create?: boolean
+  /** 未暂存改动存在时是否强制切换（等价 `git switch -f`）。 */
+  force?: boolean
+}
+
+/**
+ * 切换到指定分支。
+ *  - 默认行为：`git switch <branch>`（工作区必须干净或已暂存）
+ *  - create=true：`git switch -c <branch>`（新建并切换）
+ *  - force=true：`git switch -f <branch>`（丢弃未暂存改动）
+ *
+ * 返回结果含 stdout/stderr 供调用方展示。
+ */
+export async function switchBranch(path: string, opts: SwitchBranchOptions): Promise<GitResult> {
+  const args: string[] = []
+  if (opts.force) args.push('-f')
+  if (opts.create) args.push('-c')
+  args.push(opts.branch)
+  return runGit(path, 'switch', { args, timeoutMs: 60_000 })
+}
+
 /** 是否存在 git 仓库（根目录用 `rev-parse --is-inside-work-tree` 探测）。 */
 export async function isRepo(path: string): Promise<boolean> {
   const r = await runGit(path, 'rev-parse', { args: ['--is-inside-work-tree'] })
@@ -291,4 +341,35 @@ export async function commitWithChanges(path: string, message: string): Promise<
     if (add.code !== 0) return add
   }
   return runGit(path, 'commit', { args: ['-m', message], timeoutMs: 60_000 })
+}
+
+/**
+ * 回滚单个未暂存文件的改动（`git restore <file>`）。
+ * 仅对已跟踪文件有效；未跟踪文件（新文件）不适用。
+ */
+export async function restoreFile(path: string, file: string): Promise<GitResult> {
+  return runGit(path, 'restore', { args: ['--', file], timeoutMs: 30_000 })
+}
+
+/**
+ * 回滚所有未暂存的已跟踪文件改动（`git restore .`）。
+ * 不影响暂存区，不影响未跟踪文件。
+ */
+export async function restoreAllFiles(path: string): Promise<GitResult> {
+  return runGit(path, 'restore', { args: ['.'], timeoutMs: 60_000 })
+}
+
+/** 暂存单个文件（`git add <file>`）。 */
+export async function stageFile(path: string, file: string): Promise<GitResult> {
+  return runGit(path, 'add', { args: [file], timeoutMs: 30_000 })
+}
+
+/** 取消暂存单个文件（`git restore --staged <file>`）。不影响工作区改动。 */
+export async function unstageFile(path: string, file: string): Promise<GitResult> {
+  return runGit(path, 'restore', { args: ['--staged', '--', file], timeoutMs: 30_000 })
+}
+
+/** 取消暂存所有文件（`git restore --staged .`）。不影响工作区改动。 */
+export async function unstageAll(path: string): Promise<GitResult> {
+  return runGit(path, 'restore', { args: ['--staged', '.'], timeoutMs: 60_000 })
 }

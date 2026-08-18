@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, commitWithChanges, diffOf, findGitRepos, inspectRepo, isRepo, localBranches, pushWithUpstream, recentLog, runGit } from './git.js'
+import { GitExecError, commitWithChanges, diffOf, findGitRepos, gitBranchList, inspectRepo, isRepo, isWorkingTreeClean, localBranches, pushWithUpstream, recentLog, restoreAllFiles, restoreFile, runGit, stageFile, switchBranch, unstageAll, unstageFile } from './git.js'
 
 const PREFIX = '/@dsh-external/dsh-git/api'
 
@@ -138,7 +138,65 @@ export function mountGitApi(ctx: ApiContext): () => void {
           return
         }
         case 'GET branches': {
-          ok(res, { repo, branches: await localBranches(repo) })
+          const bl = await gitBranchList(repo)
+          ok(res, { repo, current: bl.current, branches: bl.branches })
+          return
+        }
+        case 'POST switch': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const branch = String(body.branch ?? '')
+          if (!branch) { badJson(res, '需要 branch 字段'); return }
+          const create = Boolean(body.create)
+          const force = Boolean(body.force)
+          if (!force) {
+            const clean = await isWorkingTreeClean(repo)
+            if (!clean) { badJson(res, '工作区有未提交的改动，请先提交或暂存，或传 force=true 强制切换', 422); return }
+          }
+          const result = await switchBranch(repo, { branch, create, force })
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git switch 失败（exit ${result.code}）`, code: result.code }, 422); return }
+          const bl = await gitBranchList(repo)
+          ok(res, { repo, stdout: result.stdout, current: bl.current, branches: bl.branches })
+          return
+        }
+        case 'POST restore': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const file = body.file ? String(body.file) : ''
+          if (file) {
+            const result = await restoreFile(repo, file)
+            if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git restore 失败（exit ${result.code}）` }, 422); return }
+            ok(res, { repo, scope: 'single', file, stdout: result.stdout })
+          } else {
+            const result = await restoreAllFiles(repo)
+            if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git restore 失败（exit ${result.code}）` }, 422); return }
+            ok(res, { repo, scope: 'all', stdout: result.stdout })
+          }
+          return
+        }
+        case 'POST stage': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const file = String(body.file ?? '')
+          if (!file) { badJson(res, '需要 file 字段'); return }
+          const result = await stageFile(repo, file)
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git add 失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, file, stdout: result.stdout })
+          return
+        }
+        case 'POST unstage': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const file = body.file ? String(body.file) : ''
+          if (file) {
+            const result = await unstageFile(repo, file)
+            if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `取消暂存失败（exit ${result.code}）` }, 422); return }
+            ok(res, { repo, scope: 'single', file, stdout: result.stdout })
+          } else {
+            const result = await unstageAll(repo)
+            if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `取消暂存失败（exit ${result.code}）` }, 422); return }
+            ok(res, { repo, scope: 'all', stdout: result.stdout })
+          }
           return
         }
         default: {

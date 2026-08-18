@@ -4,7 +4,7 @@
  */
 import type { Context } from 'cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { commitWithChanges, diffOf, gitOk, inspectRepo, pushWithUpstream, recentLog, runGit } from './git.js'
+import { commitWithChanges, diffOf, gitBranchList, gitOk, inspectRepo, isWorkingTreeClean, pushWithUpstream, recentLog, restoreAllFiles, restoreFile, runGit, switchBranch } from './git.js'
 
 type AppContext = Context & {
   logger?: { info?(...a: any[]): void; warn?(...a: any[]): void }
@@ -156,6 +156,78 @@ export function registerGitTools(ctx: AppContext): () => void {
       const r = await pushWithUpstream(repoOf(args.path), extra)
       if (r.code !== 0) throw new Error(r.stderr || `git push 失败（exit ${r.code}）`)
       return { stdout: r.stdout, stderr: r.stderr }
+    },
+  })))
+
+  disposers.push(ctx.tools.register(defineTool({
+    name: 'git_switch',
+    description: '切换分支。默认切换到已有分支；设 create=true 新建并切换；设 force=true 强制切换（丢弃未暂存改动）。切换前会检查工作区是否干净，不干净时提示用户。',
+    parameters: {
+      path: { type: 'string', description: '目标仓库绝对路径' },
+      branch: { type: 'string', description: '目标分支名' },
+      create: { type: 'boolean', description: '若目标分支不存在，是否自动创建（git switch -c）' },
+      force: { type: 'boolean', description: '有未暂存改动时是否强制切换（git switch -f，会丢弃未暂存改动）' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { stdout: { type: 'string' }, branch: { type: 'string' }, current: { type: 'string' }, branches: { type: 'array', items: { type: 'string' } } } },
+      render(_a, value: any) {
+        return text(`已切换到 ${value.branch}\n\n当前所有分支：\n${value.branches.map((b: string) => (b === value.current ? '* ' : '  ') + b).join('\n')}`)
+      },
+    },
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const p = repoOf(args.path)
+      const branch = String(args.branch ?? '')
+      if (!branch) throw new Error('需要 branch（目标分支名）')
+
+      // 安全检查：非 force 时工作区必须干净
+      if (!args.force) {
+        const clean = await isWorkingTreeClean(p)
+        if (!clean) throw new Error('工作区有未提交的改动，请先提交或暂存，或使用 force=true 强制切换（会丢弃未暂存改动）')
+      }
+
+      const r = await switchBranch(p, {
+        branch,
+        create: Boolean(args.create),
+        force: Boolean(args.force),
+      })
+      if (r.code !== 0) throw new Error(r.stderr || `git switch 失败（exit ${r.code}）`)
+
+      const { current, branches } = await gitBranchList(p)
+      return { stdout: r.stdout, branch: current, current, branches }
+    },
+    presentCall(args: any) {
+      return { card: 'generic' as const, title: `git switch → ${args.branch}${args.create ? ' (新建)' : ''}${args.force ? ' (强制)' : ''}` }
+    },
+  })))
+
+  disposers.push(ctx.tools.register(defineTool({
+    name: 'git_restore',
+    description: '回滚未暂存的文件改动。传 file 回滚单个文件，不传 file 则回滚所有未暂存的已跟踪文件。不影响暂存区，不影响未跟踪文件。此操作不可逆。',
+    parameters: {
+      path: { type: 'string', description: '目标仓库绝对路径' },
+      file: { type: 'string', description: '可选：要回滚的单个文件相对路径。不传则回滚所有未暂存改动' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { stdout: { type: 'string' }, scope: { type: 'string' } } },
+      render(_a, value: any) { return text(value.scope === 'single' ? `已回滚：${value.file}` : '已回滚所有未暂存改动') },
+    },
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const p = repoOf(args.path)
+      const file = args.file ? String(args.file) : ''
+      if (file) {
+        const r = await restoreFile(p, file)
+        if (r.code !== 0) throw new Error(r.stderr || `git restore 失败（exit ${r.code}）`)
+        return { stdout: r.stdout, scope: 'single', file }
+      } else {
+        const r = await restoreAllFiles(p)
+        if (r.code !== 0) throw new Error(r.stderr || `git restore 失败（exit ${r.code}）`)
+        return { stdout: r.stdout, scope: 'all' }
+      }
+    },
+    presentCall(args: any) {
+      return { card: 'generic' as const, title: args.file ? `git restore: ${args.file}` : 'git restore: 回滚全部' }
     },
   })))
 
