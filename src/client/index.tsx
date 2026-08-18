@@ -101,7 +101,7 @@ function esc(s: unknown): string {
 async function api(path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(API + path, init)
   const j = await res.json().catch(() => ({}))
-  if (!res.ok || j?.ok === false) throw new Error(j?.error || `HTTP ${res.status}`)
+  if (!res.ok || j?.ok === false) throw new Error(j?.error || j?.stderr || `HTTP ${res.status}`)
   return j
 }
 
