@@ -174,6 +174,51 @@ lib/client.js     # 浏览器面板（ModuleLoader.load 自动发现）
 
 ---
 
+## 发布 / 版本管理
+
+约定（语义化版本 + git tag + npm 发布 + `dsh plugin` 安装闭环）：
+
+1. **改完代码先构建并自检**（需要 `DSH_CHECKOUT` 指向 dsh 源码 checkout，例如 `D:/Project/tools/deepseek-harness`）：
+   ```bash
+   bash scripts/build.sh        # 服务端 → lib/
+   npm run build:client         # 浏览器端 → lib/client.js
+   ```
+   发布前 `npm pack --dry-run --ignore-scripts` 确认 `lib/`、`cordis.patch.yml`、`README.md` 都在 tarball 里。
+
+2. **提交**（中文提交信息：`<类型>: <描述>`，说明"为什么"）：
+   ```bash
+   git add <改动的文件>         # 只 add 明确要提交的，不用 git add -A
+   git commit -m "feat/fix: ..."
+   ```
+
+3. **bump 版本 + 打 tag + 推送**：
+   ```bash
+   npm version patch|minor|major    # 自动改 package.json/package-lock.json + 提交 + 打 tag v<版本>
+   git push && git push --tags
+   ```
+   - `patch`（如 0.1.1→0.1.2）：bug 修复；`minor`（→0.2.0）：新功能/不兼容改名；`major`（→1.0.0）：破坏性变更。
+   - 升级用 `npm version` 而不是手改，可保证 tag 与 package.json 一致。
+
+4. **发布**（需要 npm 登录；token 用 granular access token；bypass 2FA 的 token 政策在收紧，长期建议走 trusted publishing）：
+   ```bash
+   npm publish --ignore-scripts \
+     --//registry.npmjs.org/:_authToken=<token> \
+     --registry https://registry.npmjs.org/
+   ```
+   > `--ignore-scripts`：`prepack` 依赖 `DSH_CHECKOUT` 构建，发布机没装构建环境时用（前提是 `lib/` 已是全新构建产物）。包固定发到官方 `registry.npmjs.org`（`publishConfig.registry`），国内安装侧走 npmmirror 自动同步。
+
+5. **验证 + 安装**：
+   ```bash
+   npm view @daxu8972/dsh-git versions
+   dsh plugin --profile web add @daxu8972/dsh-git          # 装最新
+   dsh plugin --profile web update @daxu8972/dsh-git       # 升级
+   ```
+   装完重启 `dsh web` 生效。
+
+> 一台电脑发布后，其它电脑按「安装 → 方式 C」执行即可；不用每次手动拷包。
+
+---
+
 ## 体系结构
 
 ```
