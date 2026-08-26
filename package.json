@@ -7,10 +7,22 @@
   "types": "./lib/types/index.d.ts",
   "files": [
     "lib",
+    "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeXJW/dsh-git.git"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "keywords": [
     "deepseek",
     "dsh",
@@ -54,7 +66,7 @@
     "./package.json": "./package.json"
   },
   "dsh": {
-      "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
