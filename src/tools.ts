@@ -1,5 +1,5 @@
 /**
- * @dsh-external/dsh-git — 把常用 git 操作注册成 DSH 工具，让模型能直接驱动。
+ * @daxu8972/dsh-git — 把常用 git 操作注册成 DSH 工具，让模型能直接驱动。
  * 这些工具与 HTTP API 共用同一套 git runner，实现「一次封装、双端复用」。
  */
 import type { Context } from 'cordis'

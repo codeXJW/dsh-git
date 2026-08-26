@@ -1,5 +1,5 @@
 /**
- * @dsh-external/dsh-git — git 子进程封装。
+ * @daxu8972/dsh-git — git 子进程封装。
  *
  * 所有 git 操作统一走这里：用 `child_process.execFile` 在目标仓库目录里执行
  * `git`，返回结构化 JSON，供 HTTP API 面板与工具注册共用。

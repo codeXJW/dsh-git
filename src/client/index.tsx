@@ -1,9 +1,9 @@
 /**
- * @dsh-external/dsh-git — client Git 面板（React 组件）。
+ * @daxu8972/dsh-git — client Git 面板（React 组件）。
  *
  * 挂到 `conversation.view` 槽（会话标签页环，Chat 之外多一个 Git 页）。
  * 槽组件契约 = React 组件（(props) => ReactNode），因此这里是标准的
- * React 函数组件 + hooks，数据来自 host 的 `@dsh-external/dsh-git/api` 端点。
+ * React 函数组件 + hooks，数据来自 host 的 `@daxu8972/dsh-git/api` 端点。
  */
 import { useEffect, useRef, useState } from 'react'
 import type { SlotsService } from '@deepseek-ai/dsh-client-ui-slots'
@@ -15,7 +15,7 @@ type ClientContext = {
 
 export const inject = ['slots']
 
-const API = '/@dsh-external/dsh-git/api'
+const API = '/@daxu8972/dsh-git/api'
 
 interface GitFile { index: string; worktree: string; path: string }
 interface RepoStatus {
@@ -603,6 +603,6 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
 /* ── 插件装配 ──────────────────────────────────────────────── */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.inject('conversation.view', () =>
-    ctx.slots.register({ name: 'conversation.view', id: '@dsh-external/dsh-git-panel', label: () => 'Git' }, GitPanel),
+    ctx.slots.register({ name: 'conversation.view', id: '@daxu8972/dsh-git-panel', label: () => 'Git' }, GitPanel),
   ), 'dsh-git: conversation view panel')
 }

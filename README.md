@@ -166,7 +166,7 @@ npm run build:client                                          # 浏览器端 →
 
 ```
 lib/index.js      # 插件入口（apply）
-lib/api.js        # HTTP /@dsh-external/dsh-git/api
+lib/api.js        # HTTP /@daxu8972/dsh-git/api
 lib/tools.js      # ctx.tools.register 工具
 lib/git.js        # git 子进程封装
 lib/client.js     # 浏览器面板（ModuleLoader.load 自动发现）
@@ -181,7 +181,7 @@ lib/client.js     # 浏览器面板（ModuleLoader.load 自动发现）
   └─ Git 标签页（conversation.view 槽）──fetch──▶ HTTP JSON API
                                                     │
 DSH host（apply）
-  ├─ ctx.webServer.register('/@dsh-external/dsh-git/api')
+  ├─ ctx.webServer.register('/@daxu8972/dsh-git/api')
   │     ├─ GET  /repos        工作区里的 git 仓库候选
   │     ├─ GET  /status       状态
   │     ├─ GET  /diff         diff（?file=&staged=1）

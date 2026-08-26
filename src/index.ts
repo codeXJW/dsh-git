@@ -1,8 +1,8 @@
 /**
- * @dsh-external/dsh-git — DSH 外置 Git 插件（hybrid）。
+ * @daxu8972/dsh-git — DSH 外置 Git 插件（hybrid）。
  *
  * 服务端装配两块能力，彼此共用同一套 git runner：
- *  1. `ctx.webServer` → HTTP JSON API（`/@dsh-external/dsh-git/api`），供浏览器端
+ *  1. `ctx.webServer` → HTTP JSON API（`/@daxu8972/dsh-git/api`），供浏览器端
  *     可视化面板 fetch（读状态 / diff / log / 提交 / 拉取 / 推送）。
  *  2. `ctx.tools.register` → 把 git_status/git_diff/… 注册成模型可见工具。
  *
@@ -12,7 +12,7 @@ import type { Context } from 'cordis'
 import { mountGitApi } from './api.js'
 import { registerGitTools } from './tools.js'
 
-export const name = '@dsh-external/dsh-git'
+export const name = '@daxu8972/dsh-git'
 
 // 服务端依赖：
 //   - tools：git 工具注册（@deepseek-ai/dsh-tools）

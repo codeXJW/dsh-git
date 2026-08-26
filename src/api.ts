@@ -1,5 +1,5 @@
 /**
- * @dsh-external/dsh-git — host HTTP API 装配。
+ * @daxu8972/dsh-git — host HTTP API 装配。
  *
  * 通过 `ctx.webServer` 注册一个 `/#PLUGIN#/api` 的 JSON 端点，浏览器端面板
  * 直接 fetch 它来读状态 / 跑 diff / 提交 / 拉取等可视化操作。
@@ -8,7 +8,7 @@
 import type { Context } from 'cordis'
 import { GitExecError, commitWithChanges, diffOf, findGitRepos, gitBranchList, inspectRepo, isRepo, isWorkingTreeClean, localBranches, pushWithUpstream, recentLog, restoreAllFiles, restoreFile, runGit, stageFile, switchBranch, unstageAll, unstageFile } from './git.js'
 
-const PREFIX = '/@dsh-external/dsh-git/api'
+const PREFIX = '/@daxu8972/dsh-git/api'
 
 /** host webserver 服务的最小可用面（运行期存在才挂载；编译期不依赖其包）。 */
 interface WebServerLike {
