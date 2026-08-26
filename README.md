@@ -1,4 +1,4 @@
-# @dsh-external/dsh-git
+# @daxu8972/dsh-git
 
 > DSH 外置 Git 插件 —— 把常用 Git 操作带进 DSH，既能当**模型工具**用，也能通过**可视化面板**点一点就完成「查看变更 / 提交 / 拉取 / 推送」。
 
@@ -124,23 +124,27 @@ dev_install_package {"dir": "<本插件目录绝对路径>"}
 
 ```bash
 npm pack
-# 得到 @dsh-external-dsh-git-0.1.0.tgz
+# 得到 daxu8972-dsh-git-0.1.0.tgz
 ```
 
 然后作为普通依赖塞进你的 DSH profile：
 
 ```
 dev_install_package {"dir": "<解压后的包目录>"}
-# 或手动：把 tarball 里的 lib/ + package.json 放进 node_modules/@dsh-external/dsh-git
+# 或手动：把 tarball 里的 lib/ + package.json 放进 node_modules/@daxu8972/dsh-git
 ```
 
-### 方式 C：npm registry（发布后）
+### 方式 C：npm registry（发布后，推荐）
+
+在已安装 `dsh` 与 `pnpm` 的机器上，一条命令完成安装（`dsh plugin` 会把参数转发给 pnpm，装完自动把包加入 profile 的 `dsh.profile.bundles` 层栈）：
 
 ```bash
-npm install @dsh-external/dsh-git
+dsh plugin --profile web add @daxu8972/dsh-git
+# 指定版本：dsh plugin --profile web add @daxu8972/dsh-git@0.1.0
+# 升级：dsh plugin --profile web update @daxu8972/dsh-git  卸载：dsh plugin --profile web remove @daxu8972/dsh-git
 ```
 
-再在 DSH 的 profile 里加载该 bundle（与内置 `dsh-skin` 同理）。
+> 发布前提：`package.json` 声明了 `dsh.bundle.patch`（本包已声明）且 `files` 包含 `cordis.patch.yml`（本包已包含）；`npm publish` 时 `prepack` 会先按上文「开发 / 构建」重建 `lib/`，若构建环境缺失可改用 `npm publish --ignore-scripts`（要求 `lib/` 已是全新构建产物）。
 
 > 无论哪种方式，要求宿主 DSH 已装配 `dsh-tools`（工具）、`dsh-host-webserver` + `dsh-workspace`（面板 HTTP API）。这些是 DSH 自带插件，缺任意面板能力会优雅降级为「仅工具」。
 
@@ -200,4 +204,4 @@ DSH host（apply）
 
 ## License
 
-MIT © 2026 @dsh-external
+MIT © 2026 daxu8972

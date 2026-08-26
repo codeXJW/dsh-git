@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-external/dsh-git",
+  "name": "@daxu8972/dsh-git",
   "version": "0.1.0",
   "description": "DSH 外置 Git 插件：git 工具（status/diff/log/add/commit/pull/push）+ 可视化变更/提交/拉取面板。",
   "type": "module",
