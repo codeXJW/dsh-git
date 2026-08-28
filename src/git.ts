@@ -373,3 +373,192 @@ export async function unstageFile(path: string, file: string): Promise<GitResult
 export async function unstageAll(path: string): Promise<GitResult> {
   return runGit(path, 'restore', { args: ['--staged', '.'], timeoutMs: 60_000 })
 }
+
+// ─── 结构化提交历史（IDEA 式日志） ─────────────────────────────
+
+/** 一条提交记录（结构化，供历史面板渲染）。 */
+export interface CommitEntry {
+  /** 完整 hash（diff 等后续查询用）。 */
+  hash: string
+  /** 7 位短 hash（展示用）。 */
+  short: string
+  author: string
+  /** ISO 时间。 */
+  date: string
+  subject: string
+  /** 装饰（如 `HEAD -> master, origin/master`），可为空串。 */
+  refs: string
+}
+
+/** 最近 N 条提交的结构化列表；空仓库（无提交）返回 []。 */
+export async function structuredLog(path: string, n = 50): Promise<CommitEntry[]> {
+  const r = await runGit(path, 'log', {
+    args: [`-${n}`, '--date=iso', '--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%D%x1e'],
+    maxStdout: 8 * 1024 * 1024,
+  })
+  if (r.code !== 0) return []
+  return r.stdout
+    .split('\x1e')
+    .map((rec) => rec.replace(/^\n/, '').trim())
+    .filter(Boolean)
+    .map((rec) => {
+      const [hash, short, author, date, subject, refs] = rec.split('\x1f')
+      return { hash: hash ?? '', short: short ?? '', author: author ?? '', date: date ?? '', subject: subject ?? '', refs: (refs ?? '').trim() }
+    })
+    .filter((c) => c.hash)
+}
+
+/** 一次提交里变更的单个文件。 */
+export interface CommitFile {
+  /** git name-status 状态字母：A/M/D/R/C/T/U/X。 */
+  status: string
+  path: string
+  /** R/C 改名/复制时的原路径。 */
+  prevPath?: string
+}
+
+/** 一次提交的概要 + 变更文件清单（`git show --name-status`）。 */
+export async function commitDetail(path: string, hash: string): Promise<{ commit: CommitEntry | null; stat: string; files: CommitFile[] }> {
+  const r = await runGit(path, 'show', {
+    args: ['--name-status', '--shortstat', '--find-renames', '--date=iso', '--pretty=format:@@META@@%x09%H%x09%h%x09%an%x09%ad%x09%s%x09%D', hash, '--'],
+    maxStdout: 2 * 1024 * 1024,
+  })
+  if (r.code !== 0) throw new GitExecError(r)
+  let commit: CommitEntry | null = null
+  let stat = ''
+  const files: CommitFile[] = []
+  for (const line of r.stdout.split('\n')) {
+    if (line.startsWith('@@META@@\t')) {
+      const [, hash, short, author, date, subject, refs] = line.split('\t')
+      commit = { hash: hash ?? '', short: short ?? '', author: author ?? '', date: date ?? '', subject: subject ?? '', refs: (refs ?? '').trim() }
+      continue
+    }
+    if (/^\s*\d+\s+files?\s+changed/.test(line)) { stat = line.trim(); continue }
+    const cols = line.split('\t')
+    if (cols.length >= 2 && /^[AMDRCTUX]+$/.test(cols[0])) {
+      if (cols.length >= 3 && (cols[0].startsWith('R') || cols[0].startsWith('C'))) {
+        files.push({ status: cols[0], prevPath: cols[1], path: cols[2] })
+      } else {
+        files.push({ status: cols[0], path: cols[1] ?? '' })
+      }
+    }
+  }
+  return { commit, stat, files }
+}
+
+/** 某次提交里单个文件的 diff（`git show --format= <hash> -- <file>`；根提交同样适用）。 */
+export async function commitFileDiff(path: string, hash: string, file: string): Promise<string> {
+  return gitOk(path, 'show', {
+    args: ['--format=', hash, '--', file],
+    maxStdout: 8 * 1024 * 1024,
+  })
+}
+
+// ─── 分支管理（本地 + 远程、删除） ─────────────────────────────
+
+/** 本地 + 远程分支（远程形如 `origin/main`；`origin/HEAD` 已过滤）。 */
+export async function allBranches(path: string): Promise<{ current: string; branches: string[]; remotes: string[] }> {
+  const local = await gitBranchList(path)
+  const r = await runGit(path, 'branch', { args: ['-r', '--no-color'] })
+  const remotes = r.code === 0
+    ? r.stdout.split('\n').map((l) => l.trim()).filter((l) => l && !l.includes('HEAD') && !l.includes(' -> '))
+    : []
+  return { ...local, remotes }
+}
+
+/** 删除本地分支（`git branch -d`；force 用 `-D`）。删除当前分支由调用方拦截。 */
+export async function deleteBranch(path: string, branch: string, force = false): Promise<GitResult> {
+  return runGit(path, 'branch', { args: [force ? '-D' : '-d', branch], timeoutMs: 30_000 })
+}
+
+// ─── Stash（储藏） ─────────────────────────────────────────────
+
+/** 一条 stash 记录。 */
+export interface StashEntry {
+  /** 序号（对应 `stash@{n}`）。 */
+  index: number
+  /** 如 `stash@{0}`。 */
+  ref: string
+  /** 短 hash。 */
+  short: string
+  /** reflog 描述（如 `WIP on master: abc1234 msg`）。 */
+  message: string
+}
+
+/** 解析 `git stash list --format=...` 输出。 */
+export async function stashList(path: string): Promise<StashEntry[]> {
+  const r = await runGit(path, 'stash', {
+    args: ['list', '--pretty=format:%gd%x1f%gh%x1f%gs%x1e'],
+    maxStdout: 1024 * 1024,
+  })
+  if (r.code !== 0 || !r.stdout) return []
+  return r.stdout
+    .split('\x1e')
+    .map((s) => s.replace(/^\n/, '').trim())
+    .filter(Boolean)
+    .map((rec, i) => {
+      const [ref, short, message] = rec.split('\x1f')
+      return { index: i, ref: ref || `stash@{${i}}`, short: short ?? '', message: message ?? '' }
+    })
+}
+
+/** 储藏当前改动（`git stash push [-u] [-m msg]`）。includeUntracked=true 时连未跟踪文件一起储藏。 */
+export async function stashPush(path: string, message?: string, includeUntracked = true): Promise<GitResult> {
+  const args = ['push']
+  if (includeUntracked) args.push('-u')
+  if (message) args.push('-m', message)
+  return runGit(path, 'stash', { args, timeoutMs: 60_000 })
+}
+
+/** 恢复储藏（pop=恢复并删除；apply=恢复但保留）。 */
+export async function stashApply(path: string, index: number, pop = true): Promise<GitResult> {
+  return runGit(path, 'stash', { args: [pop ? 'pop' : 'apply', `stash@{${index}}`], timeoutMs: 60_000 })
+}
+
+/** 删除指定储藏（`git stash drop stash@{n}`）。 */
+export async function stashDrop(path: string, index: number): Promise<GitResult> {
+  return runGit(path, 'stash', { args: ['drop', `stash@{${index}}`], timeoutMs: 30_000 })
+}
+
+// ─── 丢弃改动 / 未跟踪文件预览 ─────────────────────────────────
+
+/**
+ * 丢弃一个文件的改动：
+ *  - 已跟踪文件 → `git restore -- <file>`（还原到 HEAD/index）；
+ *  - 未跟踪文件 → `git clean -f -- <file>`（直接删除）。
+ * 两者都不可逆，调用方需先确认。
+ */
+export async function discardFile(path: string, file: string): Promise<GitResult> {
+  const tracked = await runGit(path, 'ls-files', { args: ['--error-unmatch', '--', file], timeoutMs: 30_000 })
+  if (tracked.code === 0) return restoreFile(path, file)
+  return runGit(path, 'clean', { args: ['-f', '--', file], timeoutMs: 30_000 })
+}
+
+export interface WorktreeFile {
+  /** 文本内容（binary=true 时为空串）。 */
+  content: string
+  /** 二进制文件（含 NUL 字节）不返回内容。 */
+  binary: boolean
+  /** 超过 512KB 被截断。 */
+  truncated: boolean
+  size: number
+}
+
+/** 读取一个未跟踪（或任意）工作区文件的内容供面板预览。路径越界（逃出仓库根）时抛错。 */
+export async function readWorktreeFile(repoPath: string, file: string): Promise<WorktreeFile> {
+  const fs = await import('node:fs')
+  const pathMod = await import('node:path')
+  const abs = pathMod.resolve(repoPath, file)
+  const root = pathMod.resolve(repoPath)
+  if (abs !== root && !abs.startsWith(root + pathMod.sep)) {
+    throw new Error('路径越界：文件必须位于仓库目录内')
+  }
+  const stat = await fs.promises.stat(abs)
+  const max = 512 * 1024
+  const buf = await fs.promises.readFile(abs)
+  // 前 8KB 出现 NUL 字节判定为二进制
+  const probe = buf.subarray(0, 8192)
+  const binary = probe.includes(0)
+  const slice = binary ? Buffer.alloc(0) : buf.subarray(0, max)
+  return { content: slice.toString('utf8'), binary, truncated: !binary && buf.length > max, size: stat.size }
+}

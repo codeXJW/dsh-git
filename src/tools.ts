@@ -4,6 +4,7 @@
  */
 import type { Context } from 'cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { commitDetail, deleteBranch, stashApply, stashDrop, stashList, stashPush } from './git.js'
 import { commitWithChanges, diffOf, gitBranchList, gitOk, inspectRepo, isWorkingTreeClean, pushWithUpstream, recentLog, restoreAllFiles, restoreFile, runGit, switchBranch } from './git.js'
 
 type AppContext = Context & {
@@ -13,6 +14,11 @@ type AppContext = Context & {
 /** 工具输出：git 文本 → model 文本块。 */
 function text(s: string): any {
   return [{ type: 'text', text: s }]
+}
+
+/** stash 序号参数收窄：非法/缺省回落到 0（stash@{0}）。 */
+function stashIndexOf(v: unknown): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : 0
 }
 
 export function registerGitTools(ctx: AppContext): () => void {
@@ -228,6 +234,103 @@ export function registerGitTools(ctx: AppContext): () => void {
     },
     presentCall(args: any) {
       return { card: 'generic' as const, title: args.file ? `git restore: ${args.file}` : 'git restore: 回滚全部' }
+    },
+  })))
+
+  disposers.push(ctx.tools.register(defineTool({
+    name: 'git_stash',
+    description: 'Stash（储藏）操作。action=list 列出储藏；action=push 储藏当前所有改动（含未跟踪文件，可带 message）；action=pop 恢复最近（或第 index 条）储藏并删除该条；action=apply 恢复但保留；action=drop 丢弃第 index 条储藏。pop/apply/drop 的 index 从 0 开始（对应 stash@{n}），不传默认 0。',
+    parameters: {
+      path: { type: 'string', description: '目标仓库绝对路径' },
+      action: { type: 'string', description: 'list | push | pop | apply | drop，默认 list' },
+      message: { type: 'string', description: 'action=push 时的储藏说明（可选）' },
+      index: { type: 'integer', description: 'pop/apply/drop 的储藏序号（stash@{n} 的 n），默认 0' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { stdout: { type: 'string' }, stashes: { type: 'string' } } },
+      render(_a, value: any) { return text((value.stdout ? value.stdout + '\n\n' : '') + (value.stashes || '（当前无储藏）')) },
+    },
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const p = repoOf(args.path)
+      const action = String(args.action ?? 'list')
+      if (action === 'push') {
+        const r = await stashPush(p, args.message ? String(args.message) : undefined, true)
+        if (r.code !== 0) throw new Error(r.stderr || `git stash push 失败（exit ${r.code}）`)
+        const stashes = await stashList(p)
+        return { stdout: r.stdout, stashes: stashes.map((s) => `${s.ref}: ${s.message}`).join('\n') }
+      }
+      if (action === 'pop' || action === 'apply') {
+        const idx = stashIndexOf(args.index)
+        const r = await stashApply(p, idx, action === 'pop')
+        if (r.code !== 0) throw new Error(r.stderr || `git stash ${action} 失败（exit ${r.code}）`)
+        const stashes = await stashList(p)
+        return { stdout: r.stdout, stashes: stashes.map((s) => `${s.ref}: ${s.message}`).join('\n') }
+      }
+      if (action === 'drop') {
+        const idx = stashIndexOf(args.index)
+        const r = await stashDrop(p, idx)
+        if (r.code !== 0) throw new Error(r.stderr || `git stash drop 失败（exit ${r.code}）`)
+        const stashes = await stashList(p)
+        return { stdout: r.stdout, stashes: stashes.map((s) => `${s.ref}: ${s.message}`).join('\n') }
+      }
+      const stashes = await stashList(p)
+      return { stdout: '', stashes: stashes.map((s) => `${s.ref}: ${s.message}`).join('\n') }
+    },
+  })))
+
+  disposers.push(ctx.tools.register(defineTool({
+    name: 'git_branch_delete',
+    description: '删除本地分支（git branch -d；force=true 用 -D 强删）。不能删除当前所在分支。',
+    parameters: {
+      path: { type: 'string', description: '目标仓库绝对路径' },
+      branch: { type: 'string', description: '要删除的分支名' },
+      force: { type: 'boolean', description: '未合并也强制删除（git branch -D）' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { stdout: { type: 'string' }, branches: { type: 'array', items: { type: 'string' } } } },
+      render(_a, value: any) { return text(`已删除分支。\n\n当前所有分支：\n${value.branches.map((b: string) => '  ' + b).join('\n')}`) },
+    },
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const p = repoOf(args.path)
+      const branch = String(args.branch ?? '')
+      if (!branch) throw new Error('需要 branch（要删除的分支名）')
+      const { current } = await gitBranchList(p)
+      if (branch === current) throw new Error(`不能删除当前所在分支 ${branch}，请先切换到其他分支`)
+      const r = await deleteBranch(p, branch, Boolean(args.force))
+      if (r.code !== 0) throw new Error(r.stderr || `git branch -d 失败（exit ${r.code}）`)
+      const { branches } = await gitBranchList(p)
+      return { stdout: r.stdout, branches }
+    },
+    presentCall(args: any) {
+      return { card: 'generic' as const, title: `git branch -d: ${args.branch}` }
+    },
+  })))
+
+  disposers.push(ctx.tools.register(defineTool({
+    name: 'git_commit_files',
+    description: '查看某次提交变更了哪些文件（状态 A/M/D/R + 路径 + 变更统计），也可看提交说明。',
+    parameters: {
+      path: { type: 'string', description: '目标仓库绝对路径' },
+      hash: { type: 'string', description: '提交 hash（完整或短 hash）' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { summary: { type: 'string' } } },
+      render(_a, value: any) { return text(value.summary) },
+    },
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const p = repoOf(args.path)
+      const hash = String(args.hash ?? '')
+      if (!hash) throw new Error('需要 hash（提交 hash）')
+      const d = await commitDetail(p, hash)
+      const lines = [
+        d.commit ? `${d.commit.short} ${d.commit.subject}（${d.commit.author} · ${d.commit.date}）` : '',
+        d.stat,
+        ...d.files.map((f) => `${f.status}\t${f.prevPath ? f.prevPath + ' -> ' : ''}${f.path}`),
+      ].filter(Boolean)
+      return { summary: lines.join('\n') }
     },
   })))
 

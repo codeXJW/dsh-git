@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, commitWithChanges, diffOf, findGitRepos, gitBranchList, inspectRepo, isRepo, isWorkingTreeClean, localBranches, pushWithUpstream, recentLog, restoreAllFiles, restoreFile, runGit, stageFile, switchBranch, unstageAll, unstageFile } from './git.js'
+import { GitExecError, allBranches, commitDetail, commitFileDiff, commitWithChanges, currentBranch, deleteBranch, diffOf, discardFile, findGitRepos, inspectRepo, isRepo, isWorkingTreeClean, pushWithUpstream, readWorktreeFile, restoreAllFiles, restoreFile, runGit, stashApply, stashDrop, stashList, stashPush, stageFile, structuredLog, switchBranch, unstageAll, unstageFile } from './git.js'
 
 const PREFIX = '/@daxu8972/dsh-git/api'
 
@@ -133,13 +133,44 @@ export function mountGitApi(ctx: ApiContext): () => void {
           return
         }
         case 'GET log': {
-          const n = Number(param(url, 'n') ?? 30)
-          ok(res, { repo, lines: await recentLog(repo, Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 30) })
+          const nRaw = Number(param(url, 'n') ?? 30)
+          const n = Number.isFinite(nRaw) && nRaw > 0 ? Math.min(nRaw, 200) : 30
+          // 结构化列表（新）；`lines` 保留为兼容旧客户端的 tab 文本格式
+          const commits = await structuredLog(repo, n)
+          const lines = commits.map((c) => [c.short, c.author, c.date, c.subject].join('\t'))
+          ok(res, { repo, lines, commits })
           return
         }
         case 'GET branches': {
-          const bl = await gitBranchList(repo)
-          ok(res, { repo, current: bl.current, branches: bl.branches })
+          const bl = await allBranches(repo)
+          ok(res, { repo, current: bl.current, branches: bl.branches, remotes: bl.remotes })
+          return
+        }
+        // 单次提交详情（变更文件清单 + shortstat）
+        case 'GET commit': {
+          const hash = param(url, 'hash')
+          if (!hash) { badJson(res, '需要 hash 参数'); return }
+          ok(res, await commitDetail(repo, hash))
+          return
+        }
+        // 单次提交里某个文件的 diff
+        case 'GET commit_diff': {
+          const hash = param(url, 'hash')
+          const file = param(url, 'file')
+          if (!hash || !file) { badJson(res, '需要 hash 和 file 参数'); return }
+          ok(res, { diff: await commitFileDiff(repo, hash, file) })
+          return
+        }
+        // 工作区文件内容预览（未跟踪文件点开时用）
+        case 'GET view': {
+          const file = param(url, 'file')
+          if (!file) { badJson(res, '需要 file 参数'); return }
+          ok(res, await readWorktreeFile(repo, file))
+          return
+        }
+        // stash 列表
+        case 'GET stashes': {
+          ok(res, { stashes: await stashList(repo) })
           return
         }
         case 'POST switch': {
@@ -155,8 +186,64 @@ export function mountGitApi(ctx: ApiContext): () => void {
           }
           const result = await switchBranch(repo, { branch, create, force })
           if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git switch 失败（exit ${result.code}）`, code: result.code }, 422); return }
-          const bl = await gitBranchList(repo)
-          ok(res, { repo, stdout: result.stdout, current: bl.current, branches: bl.branches })
+          const bl = await allBranches(repo)
+          ok(res, { repo, stdout: result.stdout, current: bl.current, branches: bl.branches, remotes: bl.remotes })
+          return
+        }
+        // 删除本地分支（当前分支会被拦截）
+        case 'POST branch_delete': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const branch = String(body.branch ?? '')
+          if (!branch) { badJson(res, '需要 branch 字段'); return }
+          const current = await currentBranch(repo)
+          if (branch === current) { badJson(res, `不能删除当前分支 ${branch}`, 422); return }
+          const result = await deleteBranch(repo, branch, Boolean(body.force))
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git branch -d 失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, stdout: result.stdout, deleted: branch })
+          return
+        }
+        // 储藏当前改动（含未跟踪文件）
+        case 'POST stash': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const message = typeof body.message === 'string' && body.message.trim() ? body.message.trim() : undefined
+          const result = await stashPush(repo, message, body.includeUntracked !== false)
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git stash 失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, stdout: result.stdout, stashes: await stashList(repo) })
+          return
+        }
+        // 恢复储藏（pop 默认 true = 恢复并删除该条）
+        case 'POST stash_apply': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const index = Number(body.index)
+          if (!Number.isInteger(index) || index < 0) { badJson(res, '需要 index（stash 序号）'); return }
+          const result = await stashApply(repo, index, body.pop !== false)
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git stash 恢复失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, stdout: result.stdout, stashes: await stashList(repo) })
+          return
+        }
+        // 丢弃某条储藏
+        case 'POST stash_drop': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const index = Number(body.index)
+          if (!Number.isInteger(index) || index < 0) { badJson(res, '需要 index（stash 序号）'); return }
+          const result = await stashDrop(repo, index)
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `git stash drop 失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, stdout: result.stdout, stashes: await stashList(repo) })
+          return
+        }
+        // 丢弃单个文件的改动（已跟踪=restore，未跟踪=clean 删除）
+        case 'POST discard': {
+          let body: any = {}
+          try { body = JSON.parse((await readBody(req)) || '{}') } catch { badJson(res, '请求体需为 JSON'); return }
+          const file = String(body.file ?? '')
+          if (!file) { badJson(res, '需要 file 字段'); return }
+          const result = await discardFile(repo, file)
+          if (result.code !== 0) { json(res, { ok: false, error: result.stderr || `丢弃改动失败（exit ${result.code}）` }, 422); return }
+          ok(res, { repo, file, stdout: result.stdout })
           return
         }
         case 'POST restore': {

@@ -1,8 +1,8 @@
 # @daxu8972/dsh-git
 
-> DSH 外置 Git 插件 —— 把常用 Git 操作带进 DSH，既能当**模型工具**用，也能通过**可视化面板**点一点就完成「查看变更 / 提交 / 拉取 / 推送」。
+> DSH 外置 Git 插件 —— 把常用 Git 操作带进 DSH，既能当**模型工具**用，也能通过**可视化面板**完成「查看变更 / 提交 / 拉取 / 推送 / 分支管理 / 储藏 / 历史浏览」，交互对齐 VSCode 源代码管理与 IDEA 提交/日志窗口。
 
-`hybrid` 形态：服务端注册 git 工具（status/diff/log/add/commit/pull/push）+ 客户端 Git 标签页。
+`hybrid` 形态：服务端注册 git 工具（status/diff/log/add/commit/pull/push/switch/restore/stash/…）+ 客户端 Git 标签页。
 
 ---
 
@@ -10,15 +10,25 @@
 
 | 能力 | 服务端工具 | 可视化面板 |
 |------|:---:|:---:|
-| 查看状态（分支/领先落后/变更清单） | `git_status` | ✅ |
-| 查看 diff | `git_diff` | ✅ |
-| 提交历史 | `git_log` | ✅ |
-| 暂存 | `git_add` | ✅「暂存全部」 |
-| 提交 | `git_commit` | ✅ 提交框 |
-| 拉取 | `git_pull` | ✅ |
-| 推送 | `git_push` | ✅ |
-| fetch | — | ✅ |
-| 历史 | `git_log` | ✅ |
+| 查看状态（分支/领先落后/变更清单） | `git_status` | ✅ 可折叠变更分组 |
+| 查看 diff（工作区/已暂存/提交内） | `git_diff` | ✅ 差异标签页，暂存⇄工作区切换 |
+| 提交历史浏览 | `git_log` | ✅ 结构化列表：点提交展开文件清单，点文件看该提交 diff |
+| 查看某次提交改了哪些文件 | `git_commit_files` | ✅ |
+| 暂存 / 取消暂存（单个/全部/勾选批量） | `git_add` | ✅ 行悬停操作 + 分组头操作 |
+| 提交（含勾选文件选择性提交） | `git_commit` | ✅ 提交框（Ctrl+Enter），显示提交计划 |
+| 提交并推送 | — | ✅ |
+| 拉取 | `git_pull` | ✅ 工具栏按钮 |
+| 推送 | `git_push` | ✅ 工具栏按钮（无上游自动 -u） |
+| 同步（拉取+推送） | — | ✅ ⇅ 按钮，带 ↓behind ↑ahead 徽标 |
+| fetch | — | ✅ 工具栏按钮 |
+| 回滚未暂存改动（单个/全部） | `git_restore` | ✅ 确认后执行 |
+| 切换分支 | `git_switch` | ✅ 分支弹层（IDEA 分支部件式） |
+| 新建分支 | `git_switch`(create) | ✅ 弹层内输入回车即建 |
+| 删除分支 | `git_branch_delete` | ✅ 弹层行内 ✕（当前分支禁删） |
+| 检出远程分支（建立跟踪） | `git_switch`(DWIM) | ✅ 弹层远程分支区 |
+| 储藏 / 恢复 / 丢弃 | `git_stash` | ✅ 储藏分组（含未跟踪文件） |
+| 丢弃未跟踪文件 | — | ✅ 未跟踪分组 🗑（确认后删除） |
+| 未跟踪文件内容预览 | — | ✅ |
 
 **目标仓库**：默认取 DSH 当前打开的**工作区**目录（`ctx.workspaceRegistry`）；一个工作区可有多个 git 项目（面板下拉切换）。HTTP API 也可用 `?path=/abs/dir` 显式指定任意目录。
 
@@ -43,26 +53,41 @@ dev_install_package {"dir": "<本插件目录绝对路径>"}
 3. 点旁边的 **「Git」** 标签页 —— 就是可视化面板了
    > 若装完看不到 Git 标签，**刷新一下页面（F5）** 让浏览器加载最新 client bundle。
 
-### 3. 使用面板
+### 3. 使用面板（VSCode / IDEA 式交互）
 
-面板顶部是仓库下拉框（列出**当前工作区**里的所有 git 项目，可切换）。
+面板分三块：**顶部工具栏**、**左栏提交与变更**、**右栏差异/历史标签页**。
 
-- **查看变更**：左侧「已暂存」「未暂存」两组文件列表，点任一文件，右侧立刻显示该文件的 diff（绿 + 红高亮）
-- **选择提交哪些**：每个文件行前有**复选框**，列表标题栏有**全选**；勾选后点「提交」就只提交勾选的文件
-- **提交**：填提交信息 → 点「提交」。若暂存区为空但有已跟踪改动，会自动 `git add -u` 后提交（等价 `git commit -a`，未跟踪文件不会被自动提交）
-- **操作按钮**：`暂存全部` / `提交` / `拉取` / `推送` / `Fetch` / `历史`
-  - 每个操作点下，对应按钮会**转圈 loading**，完成后顶部弹出**绿色「✓」成功 toast**（提交/推送会附 hash），失败弹红色「✕」
-  - 按钮按可用性置灰：无已暂存且无改动时「提交」灰；本地无任何提交时「推送」灰
-- **历史**：点「历史」查看最近 30 条提交日志
-- 提交成功后勾选自动清除、状态自动刷新
+**顶部工具栏**
+
+- **仓库下拉框**：列出当前工作区里的所有 git 项目，可切换
+- **⑂ 分支按钮**：点开**分支弹层**（IDEA 分支部件式）——搜索过滤、输入新名字回车即**新建并切换**、点本地分支**切换**（悬停 ✕ **删除**）、点远程分支**检出为本地跟踪分支**
+- **⬇ 拉取 / ⬆ 推送 / ⇅ 同步 / ⤓ Fetch / ⟳ 刷新**：同步 = 拉取 + 推送（VSCode Synchronize 式），有领先/落后时按钮上显示 `↓behind ↑ahead` 徽标
+
+**左栏（提交 + 变更）**
+
+- **提交框**在最上方：填提交信息 → `✓ 提交`（或 Ctrl+Enter），旁边有「提交并推送」；下方实时显示**提交计划**（勾选 N 项 / 已暂存 N 项 / 将自动暂存已跟踪改动）
+- 四个**可折叠分组**（VSCode 源代码管理式）：`暂存的更改` / `更改（未暂存）` / `未跟踪` / `储藏（Stash）`，标题带计数
+- 每个文件行：**复选框**（勾选 = 只提交这些文件，提交前自动暂存）+ **状态字母**（A 绿 / M 琥珀 / D 红 / R 紫 / U 绿）+ **悬停操作**：
+  - 已暂存行：`−` 取消暂存
+  - 未暂存行：`+` 暂存、`↩` 回滚（确认后执行，不可撤销）
+  - 未跟踪行：`+` 暂存、`🗑` 删除（确认后执行）
+  - 分组标题右侧有「全部暂存 / 全部取消暂存 / 全部回滚」等批量操作
+- **储藏分组**：「储藏更改」可填说明把当前所有改动（**含未跟踪文件**）存起来；每条储藏可「恢复」（pop）/「丢弃」（drop，确认）
+
+**右栏（差异 | 历史 标签页）**
+
+- **差异页**：点左栏任一文件即显示 diff（`+`/`−` 行着色、hunk 头高亮）；一个文件同时有暂存和未暂存改动时，头部可切换「暂存差异 / 工作区差异」；未跟踪文件直接预览内容（二进制提示、大文件截断）
+- **历史页**：结构化提交列表（主题 + 短 hash + 作者 + 时间 + `origin/main` 等 refs 徽标）→ **点提交展开变更文件清单**（含 shortstat）→ **点文件查看该提交里此文件的 diff**（自动切到差异页）
+
+**安全与反馈**：所有不可逆操作（回滚/删除/丢储藏）都有确认弹窗；每个操作按钮自带 loading 态，完成/失败弹出 toast；状态在操作后自动刷新。
 
 ### 4. 在对话里让模型用 git（可选）
 
 同一插件还注册了模型工具，你直接说：
 
-> “帮我看看当前仓库有哪些变更”　“提交这些改动”　“拉取最新代码”
+> “帮我看看当前仓库有哪些变更”　“提交这些改动”　“拉取最新代码”　“把改动先储藏一下”　“看看上个提交改了哪些文件”
 
-DSH 会用 `git_status` / `git_diff` / `git_log` / `git_add` / `git_commit` / `git_pull` / `git_push` 执行。
+DSH 会用 `git_status` / `git_diff` / `git_log` / `git_add` / `git_commit` / `git_pull` / `git_push` / `git_switch` / `git_restore` / `git_stash` / `git_branch_delete` / `git_commit_files` 执行。
 
 ---
 
@@ -230,10 +255,18 @@ DSH host（apply）
   │     ├─ GET  /repos        工作区里的 git 仓库候选
   │     ├─ GET  /status       状态
   │     ├─ GET  /diff         diff（?file=&staged=1）
-  │     ├─ GET  /log          提交历史
-  │     ├─ GET  /branches     本地分支
-  │     └─ POST /add|commit|pull|push|fetch|checkout|reset
+  │     ├─ GET  /log          提交历史（commits 结构化 + lines 兼容旧格式）
+  │     ├─ GET  /branches     本地分支 + 远程分支
+  │     ├─ GET  /commit       单次提交详情（文件清单 + shortstat，?hash=）
+  │     ├─ GET  /commit_diff  单次提交里某文件的 diff（?hash=&file=）
+  │     ├─ GET  /view         未跟踪文件内容预览（?file=）
+  │     ├─ GET  /stashes      stash 列表
+  │     ├─ POST /stage /unstage /restore /discard   暂存/取消/回滚/丢弃
+  │     ├─ POST /switch /branch_delete              切换/新建/删除分支
+  │     ├─ POST /stash /stash_apply /stash_drop     储藏/恢复/丢弃储藏
+  │     └─ POST /add|commit|pull|push|fetch|checkout|reset（白名单命令）
   └─ ctx.tools.register(...)  git_status/git_diff/git_log/git_add/git_commit/git_pull/git_push
+                              git_switch/git_restore/git_stash/git_branch_delete/git_commit_files
 ```
 
 ---
