@@ -5,6 +5,12 @@ import type { GitFile } from './types.js'
 
 export const API = '/@daxu8972/dsh-git/api'
 
+/**
+ * 泳道调色板。⚠ 必须与 src/git.ts 的 GRAPH_COLORS 同序同色
+ * （graph.color 存索引，两端各自取色）。
+ */
+export const GRAPH_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899']
+
 export async function api(path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(API + path, init)
   const j = await res.json().catch(() => ({}))

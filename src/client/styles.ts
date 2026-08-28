@@ -112,19 +112,23 @@ export const CSS = `
 .dsh-git .diff-wrap{border:1px solid var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;overflow:hidden}
 .dsh-git .diff-empty{border:1px dashed var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;padding:28px 10px;text-align:center;color:var(--dsw-alias-label-tertiary,#6e7781)}
 
-/* ── 历史面板（IDEA 式日志） ─────────────────── */
+/* ── 历史面板（Git Graph 式泳道图） ───────────── */
 .dsh-git .hist{border:1px solid var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;overflow:hidden}
-.dsh-git .hist-list{max-height:calc(100vh - 320px);overflow-y:auto}
-.dsh-git .hist-row{padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l2,#d8dee4);cursor:pointer}
-.dsh-git .hist-row:last-child{border-bottom:none}
+.dsh-git .hist-list{max-height:calc(100vh - 320px);overflow:auto}
+.dsh-git .hist-item{border-bottom:1px solid var(--dsw-alias-border-l2,#d8dee4)}
+.dsh-git .hist-item:last-child{border-bottom:none}
+.dsh-git .hist-row{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 2px;cursor:pointer;min-width:0}
 .dsh-git .hist-row:hover{background:var(--dsw-alias-bg-layer-1,#f6f8fa)}
 .dsh-git .hist-row.expanded{background:var(--dsw-alias-bg-layer-3,#eaeef2)}
-.dsh-git .hist-row .subject{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsh-git .hist-row .subject .refpill{display:inline-block;font-size:10px;font-weight:600;border-radius:8px;padding:0 6px;margin-left:6px;background:rgba(9,105,218,.12);color:#0550ae;vertical-align:1px}
-.dsh-git .hist-row .subject .refpill.head{background:rgba(26,127,55,.14);color:#1a7f37}
-.dsh-git .hist-row .meta{display:flex;gap:8px;align-items:center;color:var(--dsw-alias-label-tertiary,#6e7781);font-size:11px}
+.dsh-git .hist-row svg.graph{flex:none;display:block}
+.dsh-git .hist-row .subject{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.dsh-git .refpill{display:inline-block;font-size:10px;font-weight:600;border-radius:8px;padding:0 6px;margin-left:6px;vertical-align:1px;background:var(--dsw-alias-bg-layer-3,#eaeef2);color:var(--dsw-alias-label-tertiary,#57606a)}
+.dsh-git .refpill.head{background:rgba(26,127,55,.14);color:#1a7f37}
+.dsh-git .refpill.remote{background:rgba(9,105,218,.12);color:#0550ae}
+.dsh-git .refpill.tag{background:rgba(159,106,13,.14);color:#9a6700}
+.dsh-git .hist-row .meta{flex:none;display:flex;gap:8px;align-items:center;color:var(--dsw-alias-label-tertiary,#6e7781);font-size:11px}
 .dsh-git .hist-row .meta .hash{font-family:ui-monospace,Menlo,monospace;color:var(--dsw-alias-brand-primary,#2b5fdc)}
-.dsh-git .hist-detail{padding:4px 10px 8px 26px;background:var(--dsw-alias-bg-layer-2,#fff)}
+.dsh-git .hist-detail{padding:4px 10px 8px 30px;background:var(--dsw-alias-bg-layer-2,#fff)}
 .dsh-git .hist-detail .stat{color:var(--dsw-alias-label-tertiary,#6e7781);font-size:11px;margin:2px 0 4px}
 .dsh-git .hist-file{display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:6px;cursor:pointer}
 .dsh-git .hist-file:hover{background:var(--dsw-alias-bg-layer-1,#f6f8fa)}

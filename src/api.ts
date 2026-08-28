@@ -6,7 +6,7 @@
  * 每个请求都带 `path`（目标仓库绝对路径），缺省落到第一个工作区路径。
  */
 import type { Context } from 'cordis'
-import { GitExecError, allBranches, commitDetail, commitFileDiff, commitWithChanges, currentBranch, deleteBranch, diffOf, discardFile, findGitRepos, inspectRepo, isRepo, isWorkingTreeClean, pushWithUpstream, readWorktreeFile, restoreAllFiles, restoreFile, runGit, stashApply, stashDrop, stashList, stashPush, stageFile, structuredLog, switchBranch, unstageAll, unstageFile } from './git.js'
+import { GitExecError, allBranches, commitDetail, commitFileDiff, commitWithChanges, computeGraph, currentBranch, deleteBranch, diffOf, discardFile, findGitRepos, inspectRepo, isRepo, isWorkingTreeClean, pushWithUpstream, readWorktreeFile, restoreAllFiles, restoreFile, runGit, stashApply, stashDrop, stashList, stashPush, stageFile, structuredLog, switchBranch, unstageAll, unstageFile } from './git.js'
 
 const PREFIX = '/@daxu8972/dsh-git/api'
 
@@ -138,7 +138,7 @@ export function mountGitApi(ctx: ApiContext): () => void {
           // 结构化列表（新）；`lines` 保留为兼容旧客户端的 tab 文本格式
           const commits = await structuredLog(repo, n)
           const lines = commits.map((c) => [c.short, c.author, c.date, c.subject].join('\t'))
-          ok(res, { repo, lines, commits })
+          ok(res, { repo, lines, commits, graph: computeGraph(commits) })
           return
         }
         case 'GET branches': {

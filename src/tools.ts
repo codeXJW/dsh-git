@@ -320,7 +320,7 @@ export function registerGitTools(ctx: AppContext): () => void {
       render(_a, value: any) { return text(value.summary) },
     },
     isConcurrencySafe: () => true,
-    async execute(args) {
+    async execute(args: any) {
       const p = repoOf(args.path)
       const hash = String(args.hash ?? '')
       if (!hash) throw new Error('需要 hash（提交 hash）')

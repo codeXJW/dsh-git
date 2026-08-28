@@ -22,6 +22,18 @@ export interface CommitEntry {
   date: string
   subject: string
   refs: string
+  parents: string[]
+}
+
+/** 一条连线段（top: 行顶→节点；bottom: 节点→行底）。from===to 为直线穿过。 */
+export interface GraphSegment { from: number; to: number; color: number }
+
+/** 一行提交的泳道数据（服务端 /log 的 graph 字段）。 */
+export interface GraphRowData {
+  lane: number
+  color: number
+  tops: GraphSegment[]
+  bottoms: GraphSegment[]
 }
 
 export interface CommitFile { status: string; path: string; prevPath?: string }

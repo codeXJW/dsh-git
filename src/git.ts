@@ -388,12 +388,14 @@ export interface CommitEntry {
   subject: string
   /** 装饰（如 `HEAD -> master, origin/master`），可为空串。 */
   refs: string
+  /** 父提交完整 hash 列表（root 提交为空数组；merge 提交有多个）。 */
+  parents: string[]
 }
 
 /** 最近 N 条提交的结构化列表；空仓库（无提交）返回 []。 */
 export async function structuredLog(path: string, n = 50): Promise<CommitEntry[]> {
   const r = await runGit(path, 'log', {
-    args: [`-${n}`, '--date=iso', '--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%D%x1e'],
+    args: [`-${n}`, '--date=iso', '--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%D%x1f%P%x1e'],
     maxStdout: 8 * 1024 * 1024,
   })
   if (r.code !== 0) return []
@@ -402,10 +404,116 @@ export async function structuredLog(path: string, n = 50): Promise<CommitEntry[]
     .map((rec) => rec.replace(/^\n/, '').trim())
     .filter(Boolean)
     .map((rec) => {
-      const [hash, short, author, date, subject, refs] = rec.split('\x1f')
-      return { hash: hash ?? '', short: short ?? '', author: author ?? '', date: date ?? '', subject: subject ?? '', refs: (refs ?? '').trim() }
+      const [hash, short, author, date, subject, refs, parents] = rec.split('\x1f')
+      return {
+        hash: hash ?? '',
+        short: short ?? '',
+        author: author ?? '',
+        date: date ?? '',
+        subject: subject ?? '',
+        refs: (refs ?? '').trim(),
+        parents: (parents ?? '').split(' ').filter(Boolean),
+      }
     })
     .filter((c) => c.hash)
+}
+
+// ─── Git Graph 泳道计算（VSCode Git Graph 式历史图） ───────────
+// git log 保证「子提交先于父提交」输出，因此可以按输出顺序做泳道分配：
+// 每个 lane 记录「期望出现的下一个 hash」，提交出现时消费对应 lane，
+// 第一父提交沿原 lane 下行，其余父提交开新 lane 或汇入既有 lane。
+
+/** 一条连线段（top: 行顶→节点；bottom: 节点→行底）。from===to 为直线穿过。 */
+export interface GraphSegment { from: number; to: number; color: number }
+
+/** 一行提交的泳道数据：节点位置 + 上下两半的连线段。 */
+export interface GraphRowData {
+  /** 节点所在 lane。 */
+  lane: number
+  /** 节点颜色索引（与 client 侧调色板对应）。 */
+  color: number
+  tops: GraphSegment[]
+  bottoms: GraphSegment[]
+}
+
+/**
+ * 泳道调色板。⚠ 必须与 client/src/ui.tsx 的 GRAPH_COLORS 保持同序同色，
+ * color 字段存的是索引，两端各按自己的数组取色。
+ */
+export const GRAPH_COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899']
+
+/** 由结构化提交列表计算每行的泳道渲染数据。 */
+export function computeGraph(commits: Array<{ hash: string; parents: Array<string> }>): GraphRowData[] {
+  const lanes: Array<{ hash: string | null; color: number }> = []
+  let nextColor = 0
+  const rows: GraphRowData[] = []
+
+  /** 找一个空闲 lane（或追加）承载 hash，并分配新颜色。 */
+  const alloc = (hash: string): { lane: number; color: number } => {
+    const free = lanes.findIndex((l) => l.hash === null)
+    const color = nextColor++ % GRAPH_COLORS.length
+    if (free >= 0) {
+      lanes[free] = { hash, color }
+      return { lane: free, color }
+    }
+    lanes.push({ hash, color })
+    return { lane: lanes.length - 1, color }
+  }
+
+  for (const c of commits) {
+    // 本行之前已活动的 lane（alloc 发生在其后，天然不画悬空的 top 段）
+    const activeAbove: number[] = []
+    for (let i = 0; i < lanes.length; i++) {
+      if (lanes[i].hash !== null) activeAbove.push(i)
+    }
+    // 该提交的所有入口 lane（多个 = 多条分支线在此汇合，即 merge 节点）
+    const incoming: number[] = []
+    for (const i of activeAbove) {
+      if (lanes[i].hash === c.hash) incoming.push(i)
+    }
+    if (incoming.length === 0) incoming.push(alloc(c.hash).lane)
+    const nodeLane = incoming[0]
+    const nodeColor = lanes[nodeLane].color
+
+    // 上半段：指向本提交的 lane 曲线汇入节点，其余直线穿过
+    const tops: GraphSegment[] = activeAbove.map((i) => ({
+      from: i,
+      to: incoming.includes(i) ? nodeLane : i,
+      color: lanes[i].color,
+    }))
+    // 被汇合的入口 lane 释放（其线条终结于本节点）
+    for (const i of incoming.slice(1)) lanes[i] = { hash: null, color: lanes[i].color }
+
+    // 下半段：第一父提交沿 nodeLane 下行；其余父提交汇入既有 lane 或开新 lane
+    const bottoms: GraphSegment[] = []
+    const parents = c.parents
+    if (parents.length > 0) {
+      lanes[nodeLane] = { hash: parents[0], color: nodeColor }
+      bottoms.push({ from: nodeLane, to: nodeLane, color: nodeColor })
+    } else {
+      // root 提交：线条终结于此
+      lanes[nodeLane] = { hash: null, color: nodeColor }
+    }
+    for (const p of parents.slice(1)) {
+      const exist = lanes.findIndex((l) => l.hash === p)
+      if (exist >= 0) {
+        // 父提交已在其它 lane 上等待：merge 曲线汇入该 lane（用节点颜色区分）
+        bottoms.push({ from: nodeLane, to: exist, color: nodeColor })
+      } else {
+        const a = alloc(p)
+        bottoms.push({ from: nodeLane, to: a.lane, color: a.color })
+      }
+    }
+    // 直线穿过的 lane（上半行就存在、且未被本节点消费）补上 bottom 半段
+    for (let i = 0; i < lanes.length; i++) {
+      if (lanes[i].hash === null || i === nodeLane) continue
+      const existedAbove = tops.some((t) => t.from === i && t.to === i)
+      if (existedAbove) bottoms.push({ from: i, to: i, color: lanes[i].color })
+    }
+
+    rows.push({ lane: nodeLane, color: nodeColor, tops, bottoms })
+  }
+  return rows
 }
 
 /** 一次提交里变更的单个文件。 */
@@ -420,7 +528,7 @@ export interface CommitFile {
 /** 一次提交的概要 + 变更文件清单（`git show --name-status`）。 */
 export async function commitDetail(path: string, hash: string): Promise<{ commit: CommitEntry | null; stat: string; files: CommitFile[] }> {
   const r = await runGit(path, 'show', {
-    args: ['--name-status', '--shortstat', '--find-renames', '--date=iso', '--pretty=format:@@META@@%x09%H%x09%h%x09%an%x09%ad%x09%s%x09%D', hash, '--'],
+    args: ['--name-status', '--shortstat', '--find-renames', '--date=iso', '--pretty=format:@@META@@%x09%H%x09%h%x09%an%x09%ad%x09%s%x09%D%x09%P', hash, '--'],
     maxStdout: 2 * 1024 * 1024,
   })
   if (r.code !== 0) throw new GitExecError(r)
@@ -429,8 +537,8 @@ export async function commitDetail(path: string, hash: string): Promise<{ commit
   const files: CommitFile[] = []
   for (const line of r.stdout.split('\n')) {
     if (line.startsWith('@@META@@\t')) {
-      const [, hash, short, author, date, subject, refs] = line.split('\t')
-      commit = { hash: hash ?? '', short: short ?? '', author: author ?? '', date: date ?? '', subject: subject ?? '', refs: (refs ?? '').trim() }
+      const [, hash, short, author, date, subject, refs, parents] = line.split('\t')
+      commit = { hash: hash ?? '', short: short ?? '', author: author ?? '', date: date ?? '', subject: subject ?? '', refs: (refs ?? '').trim(), parents: (parents ?? '').split(' ').filter(Boolean) }
       continue
     }
     if (/^\s*\d+\s+files?\s+changed/.test(line)) { stat = line.trim(); continue }

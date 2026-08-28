@@ -14,7 +14,7 @@ import { BranchMenu } from './branch-menu.js'
 import { HistoryPane } from './history.js'
 import { CSS } from './styles.js'
 import { api, BusyButton, diffHtml, FileRow, IconBtn, Section, short } from './ui.js'
-import type { BranchInfo, CommitDetailPayload, CommitEntry, DiffView, RepoStatus, StashEntry } from './types.js'
+import type { BranchInfo, CommitDetailPayload, CommitEntry, DiffView, GraphRowData, RepoStatus, StashEntry } from './types.js'
 
 type ClientContext = {
   slots: SlotsService
@@ -38,6 +38,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   const [tab, setTab] = useState<'diff' | 'history'>('diff')
   const [view, setView] = useState<DiffView | null>(null)
   const [commits, setCommits] = useState<CommitEntry[]>([])
+  const [graph, setGraph] = useState<GraphRowData[]>([])
   const [logLoading, setLogLoading] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [detail, setDetail] = useState<CommitDetailPayload | null>(null)
@@ -67,7 +68,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
 
   const resetRepoState = (): void => {
     setStatus(null); setBranchInfo({ current: '', branches: [], remotes: [] }); setStashes([])
-    setChecked(new Set()); setView(null); setCommits([]); setExpanded(null); setDetail(null)
+    setChecked(new Set()); setView(null); setCommits([]); setGraph([]); setExpanded(null); setDetail(null)
     setMenuOpen(false); setStashBoxOpen(false); setStashMsg(''); setError(null)
   }
 
@@ -112,6 +113,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
     try {
       const j = await api(`/log${qs()}&n=100`)
       setCommits(j.commits ?? [])
+      setGraph(Array.isArray(j.graph) ? j.graph : [])
     } catch (e) { showToast('err', `读取历史失败：${String((e as Error).message || e)}`) } finally { setLogLoading(false) }
   }
 
@@ -199,7 +201,9 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       const j = await post(cmd, { subargs: [] })
       const detail = (j.stdout || '').split('\n').find((l: string) => l.includes(']')) ?? ''
       showToast('ok', okText + (detail ? ' ' + detail.split(']')[0].replace('[', '') : ''))
-    } catch (e) { showToast('err', `${okText}失败：${String((e as Error).message || e)}`) } finally { setBusy(null) }
+    } catch (e) {
+      showToast('err', `${okText.replace(/^已/, '')}失败：${String((e as Error).message || e)}`)
+    } finally { setBusy(null) }
     await refresh()
   }
 
@@ -227,7 +231,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
   }
 
   const afterCommit = (): void => {
-    setMsg(''); setChecked(new Set()); setView(null); setCommits([]); setExpanded(null); setDetail(null)
+    setMsg(''); setChecked(new Set()); setView(null); setCommits([]); setGraph([]); setExpanded(null); setDetail(null)
   }
 
   const doCommit = async (): Promise<void> => {
@@ -264,10 +268,12 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
       setBranchInfo({ current: j.current ?? branch, branches: j.branches ?? [], remotes: j.remotes ?? [] })
       showToast('ok', `已${create ? '创建并' : ''}切换到 ${j.current ?? branch}`)
       setMenuOpen(false)
-      setView(null); setCommits([]); setExpanded(null); setDetail(null)
+      setView(null); setCommits([]); setGraph([]); setExpanded(null); setDetail(null)
     } catch (e) {
-      const m2 = String((e as Error).message || e)
-      showToast('err', m2.includes('未提交') ? m2 + '（先提交，或储藏改动后再切换）' : m2)
+      // 后端错误里带开发者措辞（"传 force=true"），统一改写为用户能直接执行的动作
+      const raw = String((e as Error).message || e)
+      const m2 = raw.includes('未提交') ? '工作区有未提交的改动：先提交，或储藏（Stash）改动后再切换' : raw
+      showToast('err', m2)
     } finally { setBusy(null) }
     await refresh()
   }
@@ -613,7 +619,9 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
                     <div className="diff-wrap">
                       <div className="pane-head">
                         <span className="title mono" title={view.file}>{view.fromCommit ? `${view.fromCommit.short} · ` : ''}{view.file}</span>
-                        <span className="tag">{view.kind === 'cached' ? '已暂存差异' : view.kind === 'worktree' ? '工作区差异' : view.kind === 'commit' ? '提交内差异' : '新文件预览'}</span>
+                        {bothModes
+                          ? null /* 有模式切换时标签与按钮重复，省略 */
+                          : <span className="tag">{view.kind === 'cached' ? '已暂存差异' : view.kind === 'worktree' ? '工作区差异' : view.kind === 'commit' ? '提交内差异' : '新文件预览'}</span>}
                         {bothModes && (
                           <span className="mode">
                             <button className={view.kind === 'cached' ? 'on' : ''} onClick={() => void openFile(view.file, 'cached')}>暂存差异</button>
@@ -642,6 +650,7 @@ export function GitPanel(props: { sessionId?: string }): React.ReactNode {
                 ) : (
                   <HistoryPane
                     commits={commits}
+                    graph={graph}
                     loading={logLoading}
                     expanded={expanded}
                     detail={detail}
