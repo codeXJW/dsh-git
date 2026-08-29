@@ -1,6 +1,6 @@
 {
   "name": "@daxu8972/dsh-git",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "DSH 外置 Git 插件：git 工具（status/diff/log/add/commit/pull/push/switch/restore/stash 等）+ VSCode/IDEA 式可视化 Git 面板（变更/提交/分支管理/储藏/历史浏览）。",
   "type": "module",
   "main": "./lib/index.js",
@@ -38,10 +38,18 @@
     "schemastery": "^3.18.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "@deepseek-ai/dsh-llm": { "optional": true },
-    "@deepseek-ai/dsh-tools": { "optional": true },
-    "schemastery": { "optional": true }
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "schemastery": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
@@ -66,7 +74,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
