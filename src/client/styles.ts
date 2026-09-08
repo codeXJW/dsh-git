@@ -50,8 +50,10 @@ export const CSS = `
 .dsh-git .branch-menu .menu-empty{padding:6px 8px;color:var(--dsw-alias-label-tertiary,#6e7781)}
 
 /* ── 双栏主体 ───────────────────────────────── */
-.dsh-git .columns{display:grid;grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:10px;align-items:start}
-.dsh-git .side{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 235px);overflow-y:auto;padding-right:2px}
+.dsh-git .columns{display:grid;grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:10px;align-items:stretch}
+.dsh-git .side{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding-right:2px;min-height:0;max-height:calc(100vh - 120px);scrollbar-width:thin}
+.dsh-git .side::-webkit-scrollbar{width:8px}
+.dsh-git .side::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,#d8dee4);border-radius:4px}
 .dsh-git .main{min-width:0;display:flex;flex-direction:column;gap:0}
 @media (max-width:760px){.dsh-git .columns{grid-template-columns:1fr}.dsh-git .side{max-height:none}}
 
