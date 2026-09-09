@@ -51,9 +51,7 @@ export const CSS = `
 
 /* ── 双栏主体 ───────────────────────────────── */
 .dsh-git .columns{display:grid;grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:10px;align-items:stretch}
-.dsh-git .side{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding-right:2px;min-height:0;max-height:calc(100vh - 120px);scrollbar-width:thin}
-.dsh-git .side::-webkit-scrollbar{width:8px}
-.dsh-git .side::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,#d8dee4);border-radius:4px}
+.dsh-git .side{display:flex;flex-direction:column;gap:8px;padding-right:2px;min-height:0}
 .dsh-git .main{min-width:0;display:flex;flex-direction:column;gap:0}
 @media (max-width:760px){.dsh-git .columns{grid-template-columns:1fr}.dsh-git .side{max-height:none}}
 
@@ -64,7 +62,11 @@ export const CSS = `
 .dsh-git .commit-actions .hint{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-tertiary,#6e7781)}
 
 /* ── 可折叠分组（VSCode 源代码管理式） ───────── */
-.dsh-git .section{border:1px solid var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;overflow:hidden;background:var(--dsw-alias-bg-layer-2,#fff)}
+.dsh-git .section{border:1px solid var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;overflow:hidden;background:var(--dsw-alias-bg-layer-2,#fff);flex:none;display:flex;flex-direction:column;min-height:0}
+.dsh-git .section .body{min-height:0;overflow-y:auto;max-height:280px;scrollbar-width:thin}
+.dsh-git .section .body::-webkit-scrollbar{width:8px}
+.dsh-git .section .body::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,#d8dee4);border-radius:4px}
+.dsh-git .section.closed .body{display:none}
 .dsh-git .section>header{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;font-weight:600;background:var(--dsw-alias-bg-layer-1,#f6f8fa);cursor:pointer;user-select:none}
 .dsh-git .section>header .caret{display:inline-block;transition:transform .15s;font-size:10px;color:var(--dsw-alias-label-tertiary,#6e7781)}
 .dsh-git .section.closed>header .caret{transform:rotate(-90deg)}
