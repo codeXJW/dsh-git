@@ -3,7 +3,7 @@
  * 用 DSH 设计 token（--dsw-alias-*），深浅色主题自动跟随宿主。
  */
 export const CSS = `
-.dsh-git{font:13px/1.6 system-ui,sans-serif;color:var(--dsw-alias-label-primary,#1f2328);padding:6px;max-width:1400px;margin:0 auto;width:100%;box-sizing:border-box}
+.dsh-git{font:13px/1.6 system-ui,sans-serif;color:var(--dsw-alias-label-primary,#1f2328);padding:6px;max-width:1400px;margin:0 auto;width:100%;box-sizing:border-box;container-type:inline-size}
 .dsh-git h2{font-size:15px;margin:0 0 8px;font-weight:600}
 .dsh-git button{font:inherit;padding:4px 10px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2,#d8dee4);background:var(--dsw-alias-bg-layer-2,#fff);color:inherit;cursor:pointer}
 .dsh-git button:hover{border-color:var(--dsw-alias-brand-primary,#2b5fdc)}
@@ -49,11 +49,12 @@ export const CSS = `
 .dsh-git .branch-row .del:hover{background:rgba(207,34,46,.1)}
 .dsh-git .branch-menu .menu-empty{padding:6px 8px;color:var(--dsw-alias-label-tertiary,#6e7781)}
 
-/* ── 双栏主体 ───────────────────────────────── */
-.dsh-git .columns{display:grid;grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:10px;align-items:stretch}
+/* ── 双栏主体：优先为差异区保留宽度 ──────────── */
+.dsh-git .columns{display:grid;grid-template-columns:clamp(220px,34%,300px) minmax(0,1fr);gap:10px;align-items:stretch}
 .dsh-git .side{display:flex;flex-direction:column;gap:8px;padding-right:2px;min-height:0}
 .dsh-git .main{min-width:0;display:flex;flex-direction:column;gap:0}
 @media (max-width:760px){.dsh-git .columns{grid-template-columns:1fr}.dsh-git .side{max-height:none}}
+@container (max-width:480px){.dsh-git .columns{grid-template-columns:1fr}.dsh-git .side{max-height:none}}
 
 /* ── 提交框 ─────────────────────────────────── */
 .dsh-git .commit-box{border:1px solid var(--dsw-alias-border-l2,#d8dee4);border-radius:9px;padding:8px;background:var(--dsw-alias-bg-layer-2,#fff)}
